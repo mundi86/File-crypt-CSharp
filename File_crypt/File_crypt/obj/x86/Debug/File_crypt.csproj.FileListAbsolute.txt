@@ -1,0 +1,18 @@
+C:\Users\mundi\AppData\Local\Temporary Projects\File_crypt\bin\Debug\File_crypt.exe
+C:\Users\mundi\AppData\Local\Temporary Projects\File_crypt\bin\Debug\File_crypt.pdb
+C:\Users\mundi\AppData\Local\Temporary Projects\File_crypt\obj\x86\Debug\ResolveAssemblyReference.cache
+C:\Users\mundi\AppData\Local\Temporary Projects\File_crypt\obj\x86\Debug\File_crypt.Form1.resources
+C:\Users\mundi\AppData\Local\Temporary Projects\File_crypt\obj\x86\Debug\File_crypt.Properties.Resources.resources
+C:\Users\mundi\AppData\Local\Temporary Projects\File_crypt\obj\x86\Debug\ResGen.read.1.tlog
+C:\Users\mundi\AppData\Local\Temporary Projects\File_crypt\obj\x86\Debug\ResGen.write.1.tlog
+C:\Users\mundi\AppData\Local\Temporary Projects\File_crypt\obj\x86\Debug\File_crypt.exe
+C:\Users\mundi\AppData\Local\Temporary Projects\File_crypt\obj\x86\Debug\File_crypt.pdb
+X:\#Projekte\#Programme\C#\File_crypt\File_crypt\File_crypt\bin\Debug\File_crypt.exe
+X:\#Projekte\#Programme\C#\File_crypt\File_crypt\File_crypt\bin\Debug\File_crypt.pdb
+X:\#Projekte\#Programme\C#\File_crypt\File_crypt\File_crypt\obj\x86\Debug\ResolveAssemblyReference.cache
+X:\#Projekte\#Programme\C#\File_crypt\File_crypt\File_crypt\obj\x86\Debug\File_crypt.Form1.resources
+X:\#Projekte\#Programme\C#\File_crypt\File_crypt\File_crypt\obj\x86\Debug\File_crypt.Properties.Resources.resources
+X:\#Projekte\#Programme\C#\File_crypt\File_crypt\File_crypt\obj\x86\Debug\ResGen.read.1.tlog
+X:\#Projekte\#Programme\C#\File_crypt\File_crypt\File_crypt\obj\x86\Debug\ResGen.write.1.tlog
+X:\#Projekte\#Programme\C#\File_crypt\File_crypt\File_crypt\obj\x86\Debug\File_crypt.exe
+X:\#Projekte\#Programme\C#\File_crypt\File_crypt\File_crypt\obj\x86\Debug\File_crypt.pdb
