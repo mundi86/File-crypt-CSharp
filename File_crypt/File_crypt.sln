@@ -5,8 +5,6 @@ VisualStudioVersion = 12.0.21005.1
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "decrypt", "File_crypt\decrypt.csproj", "{A409BB5C-0B5C-470F-B4A5-6810C78689EB}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "test_output", "test_output\test_output.csproj", "{95E9FA89-8B94-4037-852E-ABA997D091D0}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -27,16 +25,6 @@ Global
 		{A409BB5C-0B5C-470F-B4A5-6810C78689EB}.Release|Mixed Platforms.Build.0 = Release|x86
 		{A409BB5C-0B5C-470F-B4A5-6810C78689EB}.Release|x86.ActiveCfg = Release|x86
 		{A409BB5C-0B5C-470F-B4A5-6810C78689EB}.Release|x86.Build.0 = Release|x86
-		{95E9FA89-8B94-4037-852E-ABA997D091D0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{95E9FA89-8B94-4037-852E-ABA997D091D0}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{95E9FA89-8B94-4037-852E-ABA997D091D0}.Debug|Mixed Platforms.ActiveCfg = Debug|Any CPU
-		{95E9FA89-8B94-4037-852E-ABA997D091D0}.Debug|Mixed Platforms.Build.0 = Debug|Any CPU
-		{95E9FA89-8B94-4037-852E-ABA997D091D0}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{95E9FA89-8B94-4037-852E-ABA997D091D0}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{95E9FA89-8B94-4037-852E-ABA997D091D0}.Release|Any CPU.Build.0 = Release|Any CPU
-		{95E9FA89-8B94-4037-852E-ABA997D091D0}.Release|Mixed Platforms.ActiveCfg = Release|Any CPU
-		{95E9FA89-8B94-4037-852E-ABA997D091D0}.Release|Mixed Platforms.Build.0 = Release|Any CPU
-		{95E9FA89-8B94-4037-852E-ABA997D091D0}.Release|x86.ActiveCfg = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

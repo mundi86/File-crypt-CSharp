@@ -1,262 +1,202 @@
-﻿/*
-* Copyright (C) 2011, Dextrey (0xDEADDEAD)
-* Removing this copyright notice is prohibited without permission from author
-* Using this code in your own software product, commercial or not is allowed
-*/
+/*
+ * Copyright (C) 2011, Dextrey (0xDEADDEAD)
+ * Removing this copyright notice is prohibited without permission from author
+ * Using this code in your own software product, commercial or not is allowed
+ */
 
 using System;
-using System.Collections.Generic;
-using System.Text;
 using System.Security.Cryptography;
-using System.Text.RegularExpressions;
+using System.Text;
 
 namespace crytec
 {
-
     class PolyAES
     {
+        // New encrypted file format (v2):
+        //   [magic 4 bytes: "PCv2"] [salt 32 bytes] [IV 16 bytes] [ciphertext]
+        //   AES-256-CBC, PKCS7 padding
+        //   PBKDF2-SHA256 key derivation, 100,000 iterations
+        //
+        // Legacy format (v1, read-only):
+        //   [ciphertext] [salt 32 bytes] [IV 32 bytes]
+        //   Rijndael-256 CBC, PBKDF2-SHA1 2000 iterations
+        //   Key derived via uplowme(SHA256(password))
 
+        private static readonly byte[] MagicV2 = { 0x50, 0x43, 0x76, 0x32 }; // "PCv2"
+        private const int SaltSize = 32;
+        private const int IvSize = 16;
+        private const int KeySize = 32;
+        private const int Pbkdf2Iterations = 100_000;
 
-        /// <summary>
-        /// verschlüsseln
-        /// </summary>
-        /// <param name="plainText"></param>
-        /// <param name="Key"></param>
-        /// <returns></returns>
-        public byte[] PolyAES256Encrypt(byte[] plainText, string Key)
+        public byte[] PolyAES256Encrypt(byte[] plainText, string password)
         {
-            byte[] salt;
-            SymmetricAlgorithm algo = new RijndaelManaged();
-            RNGCryptoServiceProvider rngAlgo = new RNGCryptoServiceProvider();
-            algo.Mode = CipherMode.CBC;
-            byte[] key = System.Text.Encoding.ASCII.GetBytes(uplowme(getHashSha256(Key)));
+            byte[] salt = new byte[SaltSize];
+            RandomNumberGenerator.Create().GetBytes(salt);
 
+            using (var aes = Aes.Create())
+            {
+                aes.KeySize = 256;
+                aes.BlockSize = 128;
+                aes.Mode = CipherMode.CBC;
+                aes.Padding = PaddingMode.PKCS7;
+                aes.GenerateIV();
 
-            algo.GenerateIV();
-            algo.BlockSize = 256;
-            salt = new byte[32];
-            rngAlgo.GetBytes(salt);
-            Rfc2898DeriveBytes pwDeriveAlg = new Rfc2898DeriveBytes(key, salt, 2000);
-            algo.Key = pwDeriveAlg.GetBytes(32);
+                using (var kdf = new Rfc2898DeriveBytes(password, salt, Pbkdf2Iterations, HashAlgorithmName.SHA256))
+                {
+                    aes.Key = kdf.GetBytes(KeySize);
+                }
 
-            ICryptoTransform encTransform = algo.CreateEncryptor();
+                byte[] iv = aes.IV; // 16 bytes
+                using (var transform = aes.CreateEncryptor())
+                {
+                    byte[] cipherText = transform.TransformFinalBlock(plainText, 0, plainText.Length);
 
-            byte[] enced = encTransform.TransformFinalBlock(plainText, 0, plainText.Length);
-
-            int origLength = enced.Length;
-            Array.Resize(ref enced, enced.Length + salt.Length);
-            Buffer.BlockCopy(salt, 0, enced, origLength, salt.Length);
-
-            origLength = enced.Length;
-            Array.Resize(ref enced, enced.Length + algo.IV.Length);
-            Buffer.BlockCopy(algo.IV, 0, enced, origLength, algo.IV.Length);
-
-            return enced;
+                    // Layout: magic(4) + salt(32) + IV(16) + ciphertext
+                    byte[] result = new byte[MagicV2.Length + SaltSize + IvSize + cipherText.Length];
+                    int pos = 0;
+                    Buffer.BlockCopy(MagicV2, 0, result, pos, MagicV2.Length); pos += MagicV2.Length;
+                    Buffer.BlockCopy(salt, 0, result, pos, SaltSize);          pos += SaltSize;
+                    Buffer.BlockCopy(iv, 0, result, pos, IvSize);              pos += IvSize;
+                    Buffer.BlockCopy(cipherText, 0, result, pos, cipherText.Length);
+                    return result;
+                }
+            }
         }
 
-        /// <summary>
-        /// entschlüsseln
-        /// </summary>
-        /// <param name="cipherText"></param>
-        /// <param name="Key"></param>
-        /// <returns></returns>
-        public byte[] PolyAES256Decrypt(byte[] cipherText, string Key)
+        public byte[] PolyAES256Decrypt(byte[] data, string password)
         {
-            byte[] salt;
-            SymmetricAlgorithm algo = new RijndaelManaged();
-
-            algo.Mode = CipherMode.CBC;
-            algo.BlockSize = 256;
-            RNGCryptoServiceProvider rngAlgo = new RNGCryptoServiceProvider();
-            byte[] key = System.Text.Encoding.ASCII.GetBytes(uplowme(getHashSha256(Key)));
-            byte[] cipherTextWithSalt = new byte[1];
-            byte[] encSalt = new byte[1];
-            byte[] origCipherText = new byte[1];
-            byte[] encIv = new byte[1];
-
-            Array.Resize(ref encIv, 32);
-            Buffer.BlockCopy(cipherText, (int)(cipherText.Length - 32), encIv, 0, 32);
-            Array.Resize(ref cipherTextWithSalt, (int)(cipherText.Length - 32));
-            Buffer.BlockCopy(cipherText, 0, cipherTextWithSalt, 0, (int)(cipherText.Length - 32));
-
-            Array.Resize(ref encSalt, 32);
-            Buffer.BlockCopy(cipherTextWithSalt, (int)(cipherTextWithSalt.Length - 32), encSalt, 0, 32);
-            Array.Resize(ref origCipherText, (int)(cipherTextWithSalt.Length - 32));
-            Buffer.BlockCopy(cipherTextWithSalt, 0, origCipherText, 0, (int)(cipherTextWithSalt.Length - 32));
-
-            algo.IV = encIv;
-            salt = encSalt;
-            Rfc2898DeriveBytes pwDeriveAlg = new Rfc2898DeriveBytes(key, salt, 2000);
-            algo.Key = pwDeriveAlg.GetBytes(32);
-
-            ICryptoTransform decTransform = algo.CreateDecryptor();
-            byte[] plainText = decTransform.TransformFinalBlock(origCipherText, 0, origCipherText.Length);
-            return plainText;
+            // Detect format by magic header
+            if (data.Length >= MagicV2.Length
+                && data[0] == MagicV2[0] && data[1] == MagicV2[1]
+                && data[2] == MagicV2[2] && data[3] == MagicV2[3])
+            {
+                return DecryptV2(data, password);
+            }
+            else
+            {
+                return DecryptLegacy(data, password);
+            }
         }
 
-        /// <summary>
-        /// Verschlüsseln
-        /// </summary>
-        /// <param name="plainText"></param>
-        /// <param name="Key"></param>
-        /// <returns></returns>
-        public byte[] PolyAES128Encrypt(byte[] plainText, string Key)
+        private byte[] DecryptV2(byte[] data, string password)
         {
-            byte[] salt;
-            SymmetricAlgorithm algo = new RijndaelManaged();
-            RNGCryptoServiceProvider rngAlgo = new RNGCryptoServiceProvider();
-            algo.Mode = CipherMode.CBC;
-            byte[] key = System.Text.Encoding.ASCII.GetBytes(getHashSha256(Key));
+            int minLen = MagicV2.Length + SaltSize + IvSize + 1;
+            if (data.Length < minLen)
+                throw new CryptographicException("File is too short to be a valid encrypted file.");
 
-            algo.GenerateIV();
-            salt = new byte[32];
-            rngAlgo.GetBytes(salt);
-            Rfc2898DeriveBytes pwDeriveAlg = new Rfc2898DeriveBytes(key, salt, 2000);
-            algo.Key = pwDeriveAlg.GetBytes(32);
+            int pos = MagicV2.Length;
+            byte[] salt = new byte[SaltSize];
+            Buffer.BlockCopy(data, pos, salt, 0, SaltSize); pos += SaltSize;
 
-            ICryptoTransform encTransform = algo.CreateEncryptor();
+            byte[] iv = new byte[IvSize];
+            Buffer.BlockCopy(data, pos, iv, 0, IvSize); pos += IvSize;
 
-            byte[] enced = encTransform.TransformFinalBlock(plainText, 0, plainText.Length);
+            int cipherLen = data.Length - pos;
+            byte[] cipherText = new byte[cipherLen];
+            Buffer.BlockCopy(data, pos, cipherText, 0, cipherLen);
 
-            int origLength = enced.Length;
-            Array.Resize(ref enced, enced.Length + salt.Length);
-            Buffer.BlockCopy(salt, 0, enced, origLength, salt.Length);
+            using (var aes = Aes.Create())
+            {
+                aes.KeySize = 256;
+                aes.BlockSize = 128;
+                aes.Mode = CipherMode.CBC;
+                aes.Padding = PaddingMode.PKCS7;
+                aes.IV = iv;
 
-            origLength = enced.Length;
-            Array.Resize(ref enced, enced.Length + algo.IV.Length);
-            Buffer.BlockCopy(algo.IV, 0, enced, origLength, algo.IV.Length);
+                using (var kdf = new Rfc2898DeriveBytes(password, salt, Pbkdf2Iterations, HashAlgorithmName.SHA256))
+                {
+                    aes.Key = kdf.GetBytes(KeySize);
+                }
 
-            return enced;
+                using (var transform = aes.CreateDecryptor())
+                {
+                    return transform.TransformFinalBlock(cipherText, 0, cipherText.Length);
+                }
+            }
         }
 
-        /// <summary>
-        /// entschlüsseln
-        /// </summary>
-        /// <param name="cipherText"></param>
-        /// <param name="Key"></param>
-        /// <returns></returns>
-        public byte[] PolyAES128Decrypt(byte[] cipherText, string Key)
+        // Legacy decrypt — keeps the old Rijndael-256 logic exactly as it was
+        // so that files encrypted with the original code can still be opened.
+#pragma warning disable CS0618 // RijndaelManaged is obsolete in .NET 6+, but fine on .NET Framework 4.8
+        private byte[] DecryptLegacy(byte[] cipherText, string password)
         {
-            byte[] salt;
-            SymmetricAlgorithm algo = new RijndaelManaged();
-            algo.Mode = CipherMode.CBC;
-            RNGCryptoServiceProvider rngAlgo = new RNGCryptoServiceProvider();
-            byte[] key = System.Text.Encoding.ASCII.GetBytes(getHashSha256(Key));
-            byte[] cipherTextWithSalt = new byte[1];
-            byte[] encSalt = new byte[1];
-            byte[] origCipherText = new byte[1];
-            byte[] encIv = new byte[1];
+            byte[] key = Encoding.ASCII.GetBytes(UplowmeLegacy(GetHashSha256Legacy(password)));
 
-            Array.Resize(ref encIv, 16);
-            Buffer.BlockCopy(cipherText, (int)(cipherText.Length - 16), encIv, 0, 16);
-            Array.Resize(ref cipherTextWithSalt, (int)(cipherText.Length - 16));
-            Buffer.BlockCopy(cipherText, 0, cipherTextWithSalt, 0, (int)(cipherText.Length - 16));
+            // Layout: [ciphertext] [salt 32 bytes] [IV 32 bytes]
+            byte[] iv = new byte[32];
+            Buffer.BlockCopy(cipherText, cipherText.Length - 32, iv, 0, 32);
 
-            Array.Resize(ref encSalt, 32);
-            Buffer.BlockCopy(cipherTextWithSalt, (int)(cipherTextWithSalt.Length - 32), encSalt, 0, 32);
-            Array.Resize(ref origCipherText, (int)(cipherTextWithSalt.Length - 32));
-            Buffer.BlockCopy(cipherTextWithSalt, 0, origCipherText, 0, (int)(cipherTextWithSalt.Length - 32));
+            int withSaltLen = cipherText.Length - 32;
+            byte[] salt = new byte[32];
+            Buffer.BlockCopy(cipherText, withSaltLen - 32, salt, 0, 32);
 
-            algo.IV = encIv;
-            salt = encSalt;
-            Rfc2898DeriveBytes pwDeriveAlg = new Rfc2898DeriveBytes(key, salt, 2000);
-            algo.Key = pwDeriveAlg.GetBytes(32);
+            int actualLen = withSaltLen - 32;
+            byte[] actualCipher = new byte[actualLen];
+            Buffer.BlockCopy(cipherText, 0, actualCipher, 0, actualLen);
 
-            ICryptoTransform decTransform = algo.CreateDecryptor();
-            byte[] plainText = decTransform.TransformFinalBlock(origCipherText, 0, origCipherText.Length);
-            return plainText;
+            using (var algo = new RijndaelManaged())
+            {
+                algo.Mode = CipherMode.CBC;
+                algo.BlockSize = 256;
+                algo.IV = iv;
+
+                using (var kdf = new Rfc2898DeriveBytes(key, salt, 2000))
+                {
+                    algo.Key = kdf.GetBytes(32);
+                }
+
+                using (var transform = algo.CreateDecryptor())
+                {
+                    return transform.TransformFinalBlock(actualCipher, 0, actualCipher.Length);
+                }
+            }
         }
+#pragma warning restore CS0618
 
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <param name="text"></param>
-        /// <returns></returns>
-        public string getHashSha256(string text)
+        private string GetHashSha256Legacy(string text)
         {
             byte[] bytes = Encoding.Unicode.GetBytes(text);
-            SHA256Managed hashstring = new SHA256Managed();
-            byte[] hash = hashstring.ComputeHash(bytes);
-            string hashString = string.Empty;
-            foreach (byte x in hash)
+            using (var sha = new SHA256Managed())
             {
-                hashString += String.Format("{0:x2}", x);
+                byte[] hash = sha.ComputeHash(bytes);
+                var sb = new System.Text.StringBuilder();
+                foreach (byte b in hash)
+                    sb.AppendFormat("{0:x2}", b);
+                return sb.ToString();
             }
-            return hashString;
         }
 
-        public string hashme(string text)
+        private string UplowmeLegacy(string text)
         {
-            Random rand = new Random();
-            string data = string.Empty;
-
-
+            var sb = new System.Text.StringBuilder();
+            bool upper = true;
             foreach (char c in text)
             {
-                if (rand.NextDouble() >= 0.5)
-                    data = data + c.ToString().ToUpper();
-                else
-                    data = data + c.ToString();
-
-            }
-
-            return data;
-        }
-
-
-
-        public string uplowme(string text)
-        {
-            Random rand = new Random();
-            string data = string.Empty;
-            bool myswitch = true;
-
-            foreach (char c in text)
-            {
-                if (myswitch)
+                if (upper)
                 {
-                    if (IsNumber(c.ToString()))
+                    switch (c)
                     {
-                        if (c.ToString() == "0")
-                            data = data + "=";
-                        if (c.ToString() == "1")
-                            data = data + "!";
-                        if (c.ToString() == "2")
-                            data = data + "<";
-                        if (c.ToString() == "3")
-                            data = data + "§";
-                        if (c.ToString() == "4")
-                            data = data + "$";
-                        if (c.ToString() == "5")
-                            data = data + "%";
-                        if (c.ToString() == "6")
-                            data = data + "&";
-                        if (c.ToString() == "7")
-                            data = data + "/";
-                        if (c.ToString() == "8")
-                            data = data + "(";
-                        if (c.ToString() == "9")
-                            data = data + ")";
+                        case '0': sb.Append('='); break;
+                        case '1': sb.Append('!'); break;
+                        case '2': sb.Append('<'); break;
+                        case '3': sb.Append('§'); break;
+                        case '4': sb.Append('$'); break;
+                        case '5': sb.Append('%'); break;
+                        case '6': sb.Append('&'); break;
+                        case '7': sb.Append('/'); break;
+                        case '8': sb.Append('('); break;
+                        case '9': sb.Append(')'); break;
+                        default:  sb.Append(char.ToUpper(c)); break;
                     }
-                    else
-                    {
-                        data = data + c.ToString().ToUpper();
-                    }
-
-                    myswitch = false;
+                    upper = false;
                 }
                 else
-                { data = data + c.ToString().ToLower(); myswitch = true; }
+                {
+                    sb.Append(char.ToLower(c));
+                    upper = true;
+                }
             }
-
-            return data;
-        }
-
-
-        bool IsNumber(string text)
-        {
-            Regex regex = new Regex(@"^[-+]?[0-9]*\.?[0-9]+$");
-            return regex.IsMatch(text);
+            return sb.ToString();
         }
     }
 }
