@@ -31,6 +31,8 @@ namespace crytec
         public Form1()
         {
             InitializeComponent();
+            // Load the lock icon from the exe itself so the title bar / taskbar show it
+            try { this.Icon = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
         }
 
         protected override void OnHandleCreated(EventArgs e)
