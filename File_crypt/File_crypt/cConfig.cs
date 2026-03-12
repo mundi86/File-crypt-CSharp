@@ -1,6 +1,7 @@
 using Microsoft.Win32;
 using System;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace crytec
@@ -64,6 +65,36 @@ namespace crytec
                     }
                 }
 
+                // --- .protected file association (icon + Win11 top-level context menu) ---
+                // Using a ProgID-based association instead of *\shell means Windows 11 shows
+                // the verb directly in the top-level context menu (not under "Show more options").
+                using (var classes = Registry.CurrentUser.OpenSubKey(@"Software\Classes", true))
+                {
+                    // Map .protected extension to our ProgID
+                    using (var ext = classes.CreateSubKey(".protected"))
+                        ext.SetValue("", "privateCrypt.protected");
+
+                    // ProgID: friendly name + icon
+                    using (var progId = classes.CreateSubKey("privateCrypt.protected"))
+                    {
+                        progId.SetValue("", "Verschlüsselte Datei (AES256)");
+                        using (var icon = progId.CreateSubKey("DefaultIcon"))
+                            icon.SetValue("", $"{exeQuoted},0");
+
+                        // open = double-click and top-level "Entschlüsseln" verb
+                        using (var shell = progId.CreateSubKey("shell"))
+                        using (var open = shell.CreateSubKey("open"))
+                        {
+                            open.SetValue("", "🔓 Entschlüsseln (AES256)");
+                            using (var cmd = open.CreateSubKey("command"))
+                                cmd.SetValue("", $"{exeQuoted} \"%1\"");
+                        }
+                    }
+                }
+
+                // Refresh shell icon cache so the icon appears immediately
+                SHChangeNotify(0x08000000, 0, IntPtr.Zero, IntPtr.Zero);
+
                 // --- Uninstall entry (shows in Apps & Features) ---
                 using (var uninst = Registry.CurrentUser.CreateSubKey(UninstallRegKey))
                 {
@@ -107,6 +138,8 @@ namespace crytec
                         TryDeleteSubKey(classes, @"*\shell\Ver- | Entschlüsseln (AES256)");
                         TryDeleteSubKey(classes, @"Directory\shell\Verschlüsseln (AES256)");
                         TryDeleteSubKey(classes, @"Directory\shell\Entschlüsseln (AES256)");
+                        TryDeleteSubKey(classes, ".protected");
+                        TryDeleteSubKey(classes, "privateCrypt.protected");
                     }
                 }
 
@@ -129,5 +162,9 @@ namespace crytec
         {
             try { parent.DeleteSubKeyTree(subkey, throwOnMissingSubKey: false); } catch { }
         }
+
+        // Notify shell to refresh icons / file associations immediately
+        [DllImport("shell32.dll")]
+        private static extern void SHChangeNotify(int wEventId, int uFlags, IntPtr dwItem1, IntPtr dwItem2);
     }
 }

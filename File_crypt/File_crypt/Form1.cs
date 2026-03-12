@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Windows.Forms;
 using System.Diagnostics;
@@ -19,9 +20,66 @@ namespace crytec
         string tmpname = string.Empty;
         string pass = string.Empty;
 
+        // DWM P/Invoke for Win11 dark title bar + rounded corners
+        [DllImport("dwmapi.dll")]
+        private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
+
+        private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+        private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+        private const int DWMWCP_ROUND = 2;
+
         public Form1()
         {
             InitializeComponent();
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            ApplyWindowsTheme();
+        }
+
+        private void ApplyWindowsTheme()
+        {
+            bool isDark = false;
+            try
+            {
+                using (var key = Registry.CurrentUser.OpenSubKey(
+                    @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"))
+                {
+                    if (key != null)
+                    {
+                        object val = key.GetValue("AppsUseLightTheme");
+                        isDark = val is int i && i == 0;
+                    }
+                }
+            }
+            catch { }
+
+            if (isDark)
+            {
+                this.BackColor = System.Drawing.Color.FromArgb(28, 28, 28);
+                textBox1.BackColor = System.Drawing.Color.FromArgb(45, 45, 45);
+                textBox1.ForeColor = System.Drawing.Color.White;
+                label1.ForeColor = System.Drawing.Color.FromArgb(220, 220, 220);
+                checkBox1.ForeColor = System.Drawing.Color.FromArgb(220, 220, 220);
+            }
+            else
+            {
+                this.BackColor = System.Drawing.Color.FromArgb(243, 243, 243);
+                textBox1.BackColor = System.Drawing.Color.White;
+                textBox1.ForeColor = System.Drawing.Color.Black;
+                label1.ForeColor = System.Drawing.Color.FromArgb(30, 30, 30);
+                checkBox1.ForeColor = System.Drawing.Color.FromArgb(30, 30, 30);
+            }
+
+            // Dark title bar
+            int darkMode = isDark ? 1 : 0;
+            try { DwmSetWindowAttribute(this.Handle, DWMWA_USE_IMMERSIVE_DARK_MODE, ref darkMode, sizeof(int)); } catch { }
+
+            // Rounded corners (Win11 only — ignored on Win10)
+            int rounded = DWMWCP_ROUND;
+            try { DwmSetWindowAttribute(this.Handle, DWMWA_WINDOW_CORNER_PREFERENCE, ref rounded, sizeof(int)); } catch { }
         }
 
         private void Form1_Load(object sender, EventArgs e)

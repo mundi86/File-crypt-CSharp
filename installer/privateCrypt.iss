@@ -112,6 +112,37 @@ Root: HKCU; \
       ValueType: string; ValueName: ""; \
       ValueData: """{app}\{#AppExeName}"" ""%1"" ""d"""
 
+; -----------------------------------------------------------------------
+; .protected file association — icon + Win11 top-level context menu
+; ProgID-based association: verb appears directly in Win11 top context menu
+; -----------------------------------------------------------------------
+Root: HKCU; \
+      Subkey: "Software\Classes\.protected"; \
+      ValueType: string; ValueName: ""; \
+      ValueData: "privateCrypt.protected"; \
+      Flags: uninsdeletekey
+
+Root: HKCU; \
+      Subkey: "Software\Classes\privateCrypt.protected"; \
+      ValueType: string; ValueName: ""; \
+      ValueData: "Verschlüsselte Datei (AES256)"; \
+      Flags: uninsdeletekey
+
+Root: HKCU; \
+      Subkey: "Software\Classes\privateCrypt.protected\DefaultIcon"; \
+      ValueType: string; ValueName: ""; \
+      ValueData: """{app}\{#AppExeName}"",0"
+
+Root: HKCU; \
+      Subkey: "Software\Classes\privateCrypt.protected\shell\open"; \
+      ValueType: string; ValueName: ""; \
+      ValueData: "🔓 Entschlüsseln (AES256)"
+
+Root: HKCU; \
+      Subkey: "Software\Classes\privateCrypt.protected\shell\open\command"; \
+      ValueType: string; ValueName: ""; \
+      ValueData: """{app}\{#AppExeName}"" ""%1"""
+
 [UninstallDelete]
 ; Remove the entire install folder on uninstall
 Type: filesandordirs; Name: "{app}"
