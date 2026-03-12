@@ -1,5 +1,9 @@
 # 🔐 privateCrypt
 
+![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
+![.NET Framework 4.8](https://img.shields.io/badge/.NET%20Framework-4.8-purple)
+![Platform: Windows](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D4)
+
 Ein schlankes Windows-Tool zum Ver- und Entschlüsseln von Dateien und Ordnern direkt per **Rechtsklick** im Windows Explorer.
 
 ---
