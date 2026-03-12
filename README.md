@@ -14,6 +14,8 @@ Ein schlankes Windows-Tool zum Ver- und Entschlüsseln von Dateien und Ordnern d
 - 📦 Kein Admin nötig — per-User Installation ohne UAC
 - 🔄 Rückwärtskompatibel mit Dateien die mit der alten Version verschlüsselt wurden
 - ➕ Saubere Deinstallation über Windows „Apps & Features"
+- 🔓 `.protected` Dateien zeigen Schloss-Icon im Explorer + „Entschlüsseln" direkt im Win11 Top-Menü
+- 🌗 Modernes Passwort-Fenster — passt sich automatisch dem Hell/Dunkel-Theme an (Win11 runde Ecken)
 
 ---
 
@@ -82,7 +84,7 @@ File_crypt\File_crypt\bin\Release\privateCrypt.exe /install
 4. Ergebnis: `test.txt` ist weg, `test.txt.protected` ist da
 
 ### ✅ Datei entschlüsseln
-1. Rechtsklick auf `test.txt.protected` → **Ver- | Entschlüsseln (AES256)**
+1. Rechtsklick auf `test.txt.protected` → **🔓 Entschlüsseln (AES256)** (direkt im Win11 Top-Menü)
 2. Gleiches Passwort eingeben → Enter
 3. Ergebnis: `test.txt` wieder da, `.protected` Datei weg
 
@@ -127,7 +129,11 @@ Rechtsklick auf eine Datei → **Ver- | Entschlüsseln (AES256)** → Passwort e
 Die Originaldatei wird durch `dateiname.erweiterung.protected` ersetzt.
 
 ### Datei entschlüsseln
-Rechtsklick auf eine `.protected` Datei → **Ver- | Entschlüsseln (AES256)** → Passwort eingeben → Enter
+Rechtsklick auf eine `.protected` Datei → **🔓 Entschlüsseln (AES256)** (direkt im Win11 Top-Menü) → Passwort eingeben → Enter
+
+> **Hinweis Win11-Kontextmenü:**
+> - `.protected` Dateien: „Entschlüsseln" erscheint **direkt im Top-Level-Menü** (via Dateiverknüpfung)
+> - Normale Dateien / Ordner: „Ver- | Entschlüsseln" bzw. „Verschlüsseln / Entschlüsseln" → unter **„Weitere Optionen anzeigen"** — das ist Win11's Design, nicht änderbar ohne COM-DLL
 
 ### Ordner verschlüsseln / entschlüsseln
 Rechtsklick auf einen Ordner → **Verschlüsseln (AES256)** oder **Entschlüsseln (AES256)**
@@ -152,6 +158,10 @@ Bei `.protected` Dateien ist die **Quick-Edit Checkbox** aktiviert: Die Datei wi
 | Framework | .NET Framework 4.8 (vorinstalliert auf Win 10/11) |
 | Platform | x86 (32-bit) |
 | Installation | Per-User, kein Admin nötig |
+| UI-Theme | Automatisch Hell/Dunkel (Windows-System-Theme) |
+| Win11-Styling | DWM: dunkle Titelleiste + runde Ecken |
+| Datei-Icon | `.protected` Dateien zeigen Schloss-Icon im Explorer |
+| Win11-Menü | `.protected` Verb direkt im Top-Level (via ProgID) |
 
 ### Dateiformat v2 (aktuell)
 ```
