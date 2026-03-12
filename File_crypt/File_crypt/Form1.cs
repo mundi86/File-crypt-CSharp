@@ -72,6 +72,7 @@ namespace crytec
         private void en_decrypt()
         {
             pass = textBox1.Text;
+            textBox1.Clear(); // Minimize time password string stays in UI
 
             if (pass.Length < 4)
             {
@@ -126,8 +127,15 @@ namespace crytec
                             string newFilename = Path.GetFileName(file).Replace(".protected", "");
 
                             cryptFile = aes.PolyAES256Decrypt(File.ReadAllBytes(file), pass);
-                            File.WriteAllBytes(Path.Combine(dir, newFilename), cryptFile);
-                            File.Delete(file);
+                            try
+                            {
+                                File.WriteAllBytes(Path.Combine(dir, newFilename), cryptFile);
+                                SecureDelete(file);
+                            }
+                            finally
+                            {
+                                if (cryptFile != null) { Array.Clear(cryptFile, 0, cryptFile.Length); cryptFile = null; }
+                            }
                         }
                         catch (Exception ex)
                         { MessageBox.Show(ex.Message); }
@@ -146,8 +154,15 @@ namespace crytec
                             string newFilename = Path.GetFileName(file) + ".protected";
 
                             newFile = aes.PolyAES256Encrypt(File.ReadAllBytes(file), pass);
-                            File.WriteAllBytes(Path.Combine(dir, newFilename), newFile);
-                            File.Delete(file);
+                            try
+                            {
+                                File.WriteAllBytes(Path.Combine(dir, newFilename), newFile);
+                                SecureDelete(file);
+                            }
+                            finally
+                            {
+                                if (newFile != null) { Array.Clear(newFile, 0, newFile.Length); newFile = null; }
+                            }
                         }
                         catch (Exception ex)
                         { MessageBox.Show(ex.Message); }
@@ -172,10 +187,17 @@ namespace crytec
 
                     if (checkBox1.Checked)
                     {
-                        // Quick-edit: decrypt to temp file and open, then clean up on exit
+                        // Quick-edit: decrypt to temp file, open with associated app, clean up on exit
                         tmpname = Path.GetTempFileName();
                         filename = Path.ChangeExtension(tmpname, Path.GetExtension(newFilename).ToLower());
-                        File.WriteAllBytes(filename, cryptFile);
+
+                        // Write with FileShare.None to block other processes during write
+                        using (var fs = new FileStream(filename, FileMode.Create, FileAccess.Write, FileShare.None))
+                            fs.Write(cryptFile, 0, cryptFile.Length);
+
+                        // Clear plaintext from memory immediately after writing to disk
+                        Array.Clear(cryptFile, 0, cryptFile.Length);
+                        cryptFile = null;
 
                         ProcessStartInfo startInfo;
                         string ext = Path.GetExtension(filename).ToLower();
@@ -205,9 +227,16 @@ namespace crytec
                     }
                     else
                     {
-                        File.WriteAllBytes(Path.Combine(dir, newFilename), cryptFile);
-                        File.Delete(inputFilePath);
-                        MessageBox.Show("File successfully decrypted.");
+                        try
+                        {
+                            File.WriteAllBytes(Path.Combine(dir, newFilename), cryptFile);
+                            SecureDelete(inputFilePath);
+                            MessageBox.Show("File successfully decrypted.");
+                        }
+                        finally
+                        {
+                            if (cryptFile != null) { Array.Clear(cryptFile, 0, cryptFile.Length); cryptFile = null; }
+                        }
                         Application.Exit();
                     }
                 }
@@ -217,10 +246,16 @@ namespace crytec
                     string newFilename = Path.GetFileName(inputFilePath) + ".protected";
 
                     newFile = aes.PolyAES256Encrypt(File.ReadAllBytes(inputFilePath), pass);
-                    File.WriteAllBytes(Path.Combine(dir, newFilename), newFile);
-                    File.Delete(inputFilePath);
-
-                    MessageBox.Show("File successfully encrypted.");
+                    try
+                    {
+                        File.WriteAllBytes(Path.Combine(dir, newFilename), newFile);
+                        SecureDelete(inputFilePath);
+                        MessageBox.Show("File successfully encrypted.");
+                    }
+                    finally
+                    {
+                        if (newFile != null) { Array.Clear(newFile, 0, newFile.Length); newFile = null; }
+                    }
                     Application.Exit();
                 }
             }
@@ -233,21 +268,49 @@ namespace crytec
             try
             {
                 cleanTemp();
-                Process.GetCurrentProcess().Kill();
             }
             catch { }
+            // Use Invoke to exit cleanly on the UI thread instead of Kill()
+            try { this.Invoke((Action)(() => Application.Exit())); } catch { }
         }
 
         private void cleanTemp()
         {
-            TryDelete(filename);
-            TryDelete(tmpname);
+            SecureDelete(filename);
+            SecureDelete(tmpname);
         }
 
-        private static void TryDelete(string path)
+        /// <summary>
+        /// Overwrites file content with zeros before deleting to prevent recovery with standard tools.
+        /// Note: On SSDs with wear-leveling, complete physical erasure cannot be guaranteed.
+        /// </summary>
+        private static void SecureDelete(string path)
         {
-            if (!string.IsNullOrEmpty(path) && File.Exists(path))
+            if (string.IsNullOrEmpty(path) || !File.Exists(path))
+                return;
+            try
             {
+                long length = new FileInfo(path).Length;
+                if (length > 0)
+                {
+                    using (var fs = new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.None))
+                    {
+                        byte[] zeros = new byte[(int)Math.Min(length, 65536)];
+                        long written = 0;
+                        while (written < length)
+                        {
+                            int chunk = (int)Math.Min(zeros.Length, length - written);
+                            fs.Write(zeros, 0, chunk);
+                            written += chunk;
+                        }
+                        fs.Flush(true); // flush to OS, not just CLR buffer
+                    }
+                }
+                File.Delete(path);
+            }
+            catch
+            {
+                // Fallback: at least delete without wiping
                 try { File.Delete(path); } catch { }
             }
         }

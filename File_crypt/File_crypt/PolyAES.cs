@@ -47,18 +47,28 @@ namespace crytec
                 }
 
                 byte[] iv = aes.IV; // 16 bytes
-                using (var transform = aes.CreateEncryptor())
+                byte[] derivedKey = aes.Key;
+                try
                 {
-                    byte[] cipherText = transform.TransformFinalBlock(plainText, 0, plainText.Length);
+                    using (var transform = aes.CreateEncryptor())
+                    {
+                        byte[] cipherText = transform.TransformFinalBlock(plainText, 0, plainText.Length);
 
-                    // Layout: magic(4) + salt(32) + IV(16) + ciphertext
-                    byte[] result = new byte[MagicV2.Length + SaltSize + IvSize + cipherText.Length];
-                    int pos = 0;
-                    Buffer.BlockCopy(MagicV2, 0, result, pos, MagicV2.Length); pos += MagicV2.Length;
-                    Buffer.BlockCopy(salt, 0, result, pos, SaltSize);          pos += SaltSize;
-                    Buffer.BlockCopy(iv, 0, result, pos, IvSize);              pos += IvSize;
-                    Buffer.BlockCopy(cipherText, 0, result, pos, cipherText.Length);
-                    return result;
+                        // Layout: magic(4) + salt(32) + IV(16) + ciphertext
+                        byte[] result = new byte[MagicV2.Length + SaltSize + IvSize + cipherText.Length];
+                        int pos = 0;
+                        Buffer.BlockCopy(MagicV2, 0, result, pos, MagicV2.Length); pos += MagicV2.Length;
+                        Buffer.BlockCopy(salt, 0, result, pos, SaltSize);          pos += SaltSize;
+                        Buffer.BlockCopy(iv, 0, result, pos, IvSize);              pos += IvSize;
+                        Buffer.BlockCopy(cipherText, 0, result, pos, cipherText.Length);
+                        return result;
+                    }
+                }
+                finally
+                {
+                    // Clear key material from memory
+                    if (derivedKey != null) Array.Clear(derivedKey, 0, derivedKey.Length);
+                    Array.Clear(salt, 0, salt.Length);
                 }
             }
         }
@@ -103,14 +113,26 @@ namespace crytec
                 aes.Padding = PaddingMode.PKCS7;
                 aes.IV = iv;
 
+                byte[] derivedKey;
                 using (var kdf = new Rfc2898DeriveBytes(password, salt, Pbkdf2Iterations, HashAlgorithmName.SHA256))
                 {
-                    aes.Key = kdf.GetBytes(KeySize);
+                    derivedKey = kdf.GetBytes(KeySize);
+                    aes.Key = derivedKey;
                 }
 
-                using (var transform = aes.CreateDecryptor())
+                try
                 {
-                    return transform.TransformFinalBlock(cipherText, 0, cipherText.Length);
+                    using (var transform = aes.CreateDecryptor())
+                    {
+                        return transform.TransformFinalBlock(cipherText, 0, cipherText.Length);
+                    }
+                }
+                finally
+                {
+                    // Clear key material from memory
+                    Array.Clear(derivedKey, 0, derivedKey.Length);
+                    Array.Clear(salt, 0, salt.Length);
+                    Array.Clear(iv, 0, iv.Length);
                 }
             }
         }
@@ -140,14 +162,27 @@ namespace crytec
                 algo.BlockSize = 256;
                 algo.IV = iv;
 
+                byte[] derivedKey;
                 using (var kdf = new Rfc2898DeriveBytes(key, salt, 2000))
                 {
-                    algo.Key = kdf.GetBytes(32);
+                    derivedKey = kdf.GetBytes(32);
+                    algo.Key = derivedKey;
                 }
 
-                using (var transform = algo.CreateDecryptor())
+                try
                 {
-                    return transform.TransformFinalBlock(actualCipher, 0, actualCipher.Length);
+                    using (var transform = algo.CreateDecryptor())
+                    {
+                        return transform.TransformFinalBlock(actualCipher, 0, actualCipher.Length);
+                    }
+                }
+                finally
+                {
+                    // Clear key material from memory
+                    Array.Clear(derivedKey, 0, derivedKey.Length);
+                    Array.Clear(key, 0, key.Length);
+                    Array.Clear(salt, 0, salt.Length);
+                    Array.Clear(iv, 0, iv.Length);
                 }
             }
         }
