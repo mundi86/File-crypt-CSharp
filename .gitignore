@@ -25,6 +25,9 @@ $RECYCLE.BIN/
 # OS X
 .DS_Store
 
+# Installer output
+dist/
+
 # Test / temp files
 *.tmp
 *.log

@@ -38,6 +38,13 @@ namespace crytec
                     return;
                 }
 
+                if (arguments[1] == "/uninstall")
+                {
+                    cConfig.Uninstall();
+                    this.Close();
+                    return;
+                }
+
                 try
                 {
                     FileAttributes attr = File.GetAttributes(arguments[1]);
