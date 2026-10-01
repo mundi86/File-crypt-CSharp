@@ -7,7 +7,7 @@ Prüfung ersetzt nichts davon — sie ist die letzte Instanz.
 | Ebene | Umfang | Aufwand | Ohne Netz/Installer |
 |---|---|---|---|
 | Unit-Tests (`PolyAES.Tests`) | Krypto-Schicht | Sekunden | ja |
-| End-to-End (`Invoke-PrivateCryptTests.ps1`) | echte EXE im Fenster | ~1 min | ja |
+| End-to-End (`Invoke-PrivateCryptTests.ps1`) | echte EXE im Fenster | ~2 min | ja |
 | Manuell | Bedienung und Erscheinungsbild | ~15 min | ja |
 
 ---
@@ -62,7 +62,7 @@ verifiziert, damit niemand die Testdaten versehentlich verändert.
 ```
 
 Startet die gebaute Anwendung, bedient sie über Windows UI Automation und
-prüft das Ergebnis auf der Platte. 25 Prüfungen:
+prüft das Ergebnis auf der Platte. 31 Prüfungen:
 
 1. Einzeldatei verschlüsseln → PCv3-Container, Original gelöscht
 2. Round-Trip → Klartext bit-genau wiederhergestellt, `.protected` entfernt
@@ -71,7 +71,8 @@ prüft das Ergebnis auf der Platte. 25 Prüfungen:
 5. Zu kurzes Passwort → abgewiesen, nichts verschlüsselt
 6. Ordner rekursiv → inkl. Unterordner, Leerzeichen im Namen, Großbuchstaben-Endung; `.db` übersprungen; keine Doppelverschlüsselung
 7. Überschreiben-Schutz → bestehende Datei unverändert
-8. `%TEMP%\privateCrypt-quickedit` enthält keine Reste
+8. **Auto-Upgrade** → zwei echte v1-Dateien aus `legacy-vectors` werden entschlüsselt und müssen als PCv3 wiederkommen, **ohne dass Klartext liegen bleibt**, und danach mit demselben Passwort wieder lesbar sein
+9. `%TEMP%\privateCrypt-quickedit` enthält keine Reste
 
 ### Zwei Fallen, die beide Zeit gekostet haben
 

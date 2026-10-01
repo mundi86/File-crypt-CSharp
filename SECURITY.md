@@ -67,6 +67,14 @@ v2 files can be decrypted and are detected automatically. They carry no integrit
 protection — if you have v2 files lying around, decrypt them once and re-encrypt; that
 upgrades them to v3.
 
+> **Folder mode does that for you.** Decrypting a folder upgrades every legacy file it
+> contains to v3 in the same pass, leaving no plaintext behind. The summary states how
+> many files were upgraded and from which format. Single-file decryption keeps the old
+> format — re-encrypt manually if you want to upgrade one file.
+>
+> Until a v2 or v1 file has been upgraded, treat its contents as **unauthenticated**.
+> An attacker with write access can alter it without knowing your password.
+
 ### v1 format (legacy, decrypt-only)
 
 | Property | Value |

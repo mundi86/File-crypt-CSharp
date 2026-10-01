@@ -79,6 +79,16 @@ folder operation usable on real data sets.
 
 ### Added
 
+- **Automatic format upgrade when decrypting a folder.** Files in an old format
+  (v2 or the 2011 original) are re-encrypted immediately after decryption, this
+  time in the current format with an HMAC signature. One pass leaves the whole
+  folder on v3, and the summary reports how many files were upgraded and from
+  which format. This matters because v2 and v1 files carry **no integrity
+  protection whatsoever** — after the upgrade they do.
+  The upgrade deliberately leaves **no plaintext behind**: the goal is to end up
+  encrypted, not decrypted. Single-file decryption still keeps the old format,
+  since migration only makes sense for a whole folder.
+
 - **`--version` (and `/version`)** prints the running version, the active container
   format, the KDF parameters and the install path. Makes it immediately visible which
   version is actually running — useful because the Explorer context menu always points

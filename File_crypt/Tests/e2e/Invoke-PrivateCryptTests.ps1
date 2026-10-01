@@ -296,11 +296,64 @@ try {
 
     # =====================================================================
     Write-Host ""
-    Write-Host "=== 8: Temp-Verzeichnis ==="
+    Write-Host "=== 8: Auto-Upgrade von Altformat auf PCv3 (Ordnerlauf) ==="
+    # Echter Altformat-Ordner: zwei v1-Vektoren aus dem Original von 2011, beide
+    # mit dem Passwort "pass1234", abgelegt als .protected. Der Ordnerlauf
+    # entschluesselt sie und verschluesselt sie sofort wieder als PCv3.
+    #
+    # Erwartet wird ausdruecklich: es bleibt KEIN Klartext liegen. Das ist der
+    # Sinn des Upgrades - die Datei soll am Ende verschluesselt sein, nicht
+    # entschluesselt.
+    $vec = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..\PolyAES.Tests\legacy-vectors")).Path
+    $d8 = Join-Path $root "t8"; New-Item -ItemType Directory -Path $d8 -Force | Out-Null
+    $altPw = "pass1234"
+    Copy-Item (Join-Path $vec "oneblock.bin") (Join-Path $d8 "altA.txt.protected") -Force
+    Copy-Item (Join-Path $vec "padding.bin")  (Join-Path $d8 "altB.txt.protected") -Force
+
+    foreach ($n in @("altA.txt.protected","altB.txt.protected")) {
+        $m = [System.Text.Encoding]::ASCII.GetString([byte[]](Get-Content -LiteralPath (Join-Path $d8 $n) -Encoding Byte -TotalCount 4))
+        if ($m -eq "PCv3") { Bad "8: $n ist bereits PCv3 - Vorbedingung verletzt" }
+    }
+
+    $a8 = Start-App $d8 "d"
+    if ((Invoke-Action $a8 "entschl" $altPw $false) -ne "ok") { Bad "8: Aktionsbutton nicht gefunden" }
+    else {
+        Start-Sleep -Seconds 8
+        if ($a8.Proc.HasExited) { Ok "8: App beendet sich selbst" }
+        else { Ok "8: Upgrade-Zusammenfassung angezeigt, wartet auf Bestaetigung"; Stop-App $a8.Proc }
+
+        # Kernpunkt: nach dem Upgrade darf KEIN Klartext liegen bleiben.
+        foreach ($n in @("altA.txt","altB.txt")) {
+            if (Test-Path (Join-Path $d8 $n)) { Bad "8: Klartext liegt noch da: $n" }
+            else { Ok "8: kein Klartext zurueckgelassen: $n" }
+        }
+
+        foreach ($n in @("altA.txt.protected","altB.txt.protected")) {
+            $q = Join-Path $d8 $n
+            if (-not (Test-Path $q)) { Bad "8: .protected fehlt: $n"; continue }
+            $m = [System.Text.Encoding]::ASCII.GetString([byte[]](Get-Content -LiteralPath $q -Encoding Byte -TotalCount 4))
+            if ($m -eq "PCv3") { Ok "8: $n ist jetzt PCv3" } else { Bad "8: $n hat Magic '$m' statt PCv3" }
+        }
+
+        # Und sind die aktualisierten Dateien mit demselben Passwort wieder lesbar?
+        $a8b = Start-App (Join-Path $d8 "altB.txt.protected")
+        if ((Invoke-Action $a8b "entschl" $altPw $true) -ne "ok") { Bad "8b: Aktionsbutton nicht gefunden" }
+        else {
+            if (-not (Wait-Exit $a8b.Proc 90)) { Stop-App $a8b.Proc }
+            $res = Join-Path $d8 "altB.txt"
+            if ((Test-Path $res) -and ((Get-Content -LiteralPath $res -Raw) -like "*Hallo Welt*")) {
+                Ok "8: aktualisierte Datei ist wieder lesbar (Inhalt korrekt)"
+            } else { Bad "8: aktualisierte Datei nicht lesbar" }
+        }
+    }
+
+    # =====================================================================
+    Write-Host ""
+    Write-Host "=== 9: Temp-Verzeichnis ==="
     $qd = Join-Path ([System.IO.Path]::GetTempPath()) "privateCrypt-quickedit"
     if (Test-Path $qd) {
         $rest = @(Get-ChildItem $qd -File -ErrorAction SilentlyContinue)
-        if ($rest.Count -eq 0) { Ok "8: Quick-Edit-Verzeichnis leer" }
+        if ($rest.Count -eq 0) { Ok "9: Quick-Edit-Verzeichnis leer" }
         else { Write-Host ("  [info] " + $rest.Count + " Datei(en) im Quick-Edit-Verzeichnis") }
     } else { Ok "8: kein Quick-Edit-Verzeichnis angelegt (nicht genutzt)" }
 

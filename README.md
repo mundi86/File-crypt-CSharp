@@ -20,6 +20,7 @@ Ein schlankes Windows-Tool zum Ver- und Entschlüsseln von Dateien und Ordnern d
 - 👁️ Quick-Edit: Datei temporär entschlüsseln, anzeigen und automatisch wieder löschen
 - 📦 Kein Admin nötig — per-User Installation ohne UAC
 - 🔄 Rückwärtskompatibel mit Dateien aus den Versionen 2.0 und 1.0
+- ⬆️ Ordner-Entschlüsseln bringt Altdateien automatisch auf das aktuelle Format
 - ➕ Saubere Deinstallation über Windows „Apps & Features"
 - 🔓 `.protected` Dateien zeigen Schloss-Icon im Explorer + „Entschlüsseln" direkt im Win11 Top-Menü
 - 🌗 Modernes Passwort-Fenster — passt sich automatisch dem Hell/Dunkel-Theme an (Win11 runde Ecken)
@@ -246,6 +247,29 @@ Rechtsklick auf eine `.protected` Datei → **🔓 Entschlüsseln (AES256)** (di
 Rechtsklick auf einen Ordner → **Verschlüsseln (AES256)** oder **Entschlüsseln (AES256)**
 
 Alle Dateien im Ordner (rekursiv, außer `.db` Dateien) werden verarbeitet. Verzeichnisverknüpfungen (Junctions) werden übersprungen, damit der Lauf nicht in Zyklen gerät. Während der Verarbeitung lässt sich der Vorgang jederzeit **abbrechen**.
+
+#### Altdateien werden dabei automatisch aktualisiert
+
+Dateien im alten Format (v2 oder Original von 2011) werden beim
+Entschlüsseln **sofort wieder verschlüsselt** — diesmal im aktuellen
+Format mit HMAC-Signatur. Am Ende steht der ganze Ordner auf v3, ohne
+dass du etwas von Hand nachverschlüsseln musst.
+
+```
+Verarbeitet: 12
+Auf AES-256 + HMAC (PCv3) aktualisiert: 4 (3 aus Version 2.0, 1 aus dem Original von 2011)
+```
+
+Das ist der Zweck: v2- und v1-Dateien haben **keinen Integritätsschutz**.
+Nach dem Upgrade sind sie manipulierbar geschützt.
+
+**Wichtig:** Die Dateien bleiben dabei **verschlüsselt** — es wird kein
+Klartext dauerhaft abgelegt. Nur wenn du danach eine einzelne Datei
+entschlüsselst, erscheint ihr Inhalt.
+
+Der Ordner-Modus ist der einzige, der automatisch aktualisiert. Beim
+Entschlüsseln einer **Einzeldatei** bleibt sie im alten Format; wer sie
+aufrüsten will, entschlüsselt und verschlüsselt sie einfach erneut.
 
 ### Quick-Edit
 Bei `.protected` Dateien ist die **Quick-Edit Checkbox** aktiviert: Die Datei wird temporär nach `%TEMP%\privateCrypt-quickedit` entschlüsselt, mit dem Standard-Programm geöffnet, und beim Schließen automatisch sicher gelöscht. Reste eines zuvor abgestürzten Programms werden beim nächsten Start entfernt.

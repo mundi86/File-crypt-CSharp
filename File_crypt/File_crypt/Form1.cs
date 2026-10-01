@@ -327,6 +327,13 @@ namespace crytec
             public int Processed;
             public readonly List<string> Errors = new List<string>();
             public readonly List<string> Skipped = new List<string>();
+
+            /// <summary>Dateien, die nach dem Entschluesseln auf v3 aktualisiert wurden.</summary>
+            public int UpgradedFromV2;
+
+            /// <summary>Dateien aus dem Originalformat von 2011, die auf v3 aktualisiert wurden.</summary>
+            public int UpgradedFromLegacy;
+
             public bool Cancelled;
         }
 
@@ -471,8 +478,25 @@ namespace crytec
                     }
                     else
                     {
+                        // Format VOR dem Entschluesseln bestimmen - danach ist die
+                        // Datei weg und laesst sich nicht mehr beurteilen.
+                        ContainerFormat original = PolyAES.DetectFormat(file);
+
                         session.DecryptFile(file, target, false);
                         FileOps.SecureDelete(file);
+
+                        // Alte Dateien (v2 bzw. Original von 2011) sofort wieder
+                        // verschluesseln, damit der Ordner danach vollstaendig auf
+                        // v3 steht. Reihenfolge ist wichtig: erst muss die alte
+                        // Chiffre weg, sonst blockiert sie das Neuschreiben.
+                        if (original == ContainerFormat.V2 || original == ContainerFormat.Legacy)
+                        {
+                            session.EncryptFile(target, file, false);
+                            FileOps.SecureDelete(target);
+
+                            if (original == ContainerFormat.V2) result.UpgradedFromV2++;
+                            else result.UpgradedFromLegacy++;
+                        }
                     }
 
                     result.Processed++;
@@ -501,7 +525,11 @@ namespace crytec
 
             if (result.Errors.Count == 0)
             {
-                if (result.Skipped.Count > 0)
+                // Auch bei reinen Upgrades hinweisen - sonst merkt niemand,
+                // dass der Ordner jetzt im aktuellen Format steht.
+                bool upgraded = (result.UpgradedFromV2 + result.UpgradedFromLegacy) > 0;
+
+                if (result.Skipped.Count > 0 || upgraded)
                 {
                     MessageBox.Show(BuildSummary(result), "privateCrypt",
                         MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -524,6 +552,23 @@ namespace crytec
             sb.Append("Verarbeitet: ").Append(result.Processed);
             if (result.Skipped.Count > 0) sb.Append("\nÜbersprungen: ").Append(result.Skipped.Count);
             if (result.Errors.Count > 0) sb.Append("\nFehlgeschlagen: ").Append(result.Errors.Count);
+
+            // Auf v3 aktualisierte Altdateien gesondert ausweisen: das ist die
+            // Antwort auf die Frage "was ist noch nicht im aktuellen Format?".
+            int upgraded = result.UpgradedFromV2 + result.UpgradedFromLegacy;
+            if (upgraded > 0)
+            {
+                sb.Append("\nAuf AES-256 + HMAC (PCv3) aktualisiert: ").Append(upgraded);
+                var details = new System.Text.StringBuilder();
+                if (result.UpgradedFromV2 > 0)
+                    details.Append(result.UpgradedFromV2).Append(" aus Version 2.0");
+                if (result.UpgradedFromLegacy > 0)
+                {
+                    if (details.Length > 0) details.Append(", ");
+                    details.Append(result.UpgradedFromLegacy).Append(" aus dem Original von 2011");
+                }
+                sb.Append(" (").Append(details).Append(")");
+            }
 
             // Bei vielen Meldungen nicht unlesbar werden.
             if (result.Skipped.Count > 0)
