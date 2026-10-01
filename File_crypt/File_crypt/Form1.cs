@@ -114,6 +114,18 @@ namespace crytec
                 return;
             }
 
+            // Auskunft ueber die tatsaechlich laufende Version. Das ist wichtig,
+            // weil das Kontextmenue immer auf %LocalAppData% zeigt und dort
+            // eine aeltere Version liegen kann - wer nur die Dateieigenschaften
+            // der gebauten EXE ansieht, prueft sonst womöglich die falsche.
+            if (string.Equals(args[1], "--version", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(args[1], "/version", StringComparison.OrdinalIgnoreCase))
+            {
+                ShowVersion();
+                Close();
+                return;
+            }
+
             CleanupOrphanedQuickEditFiles();
 
             if (!TryReadTarget(args, out _targetPath, out _isDirectory, out _encryptMode))
@@ -211,6 +223,22 @@ namespace crytec
             {
                 return "Entschlüsseln → unbekanntes Format";
             }
+        }
+
+        /// <summary>Zeigt Version und Container-Format dieser Datei an.</summary>
+        private static void ShowVersion()
+        {
+            FileVersionInfo info = FileVersionInfo.GetVersionInfo(Application.ExecutablePath);
+            string fileVersion = info.FileVersion ?? "unbekannt";
+
+            MessageBox.Show(
+                "privateCrypt " + fileVersion + "\r\n\r\n" +
+                "Aktuelles Container-Format: PCv3\r\n" +
+                "  AES-256-CBC + HMAC-SHA256 (Integritätsschutz)\r\n" +
+                "  PBKDF2-HMAC-SHA256, " + PolyAES.Pbkdf2Iterations.ToString("N0") + " Iterationen\r\n\r\n" +
+                "Lesbar: PCv3, PCv2 (2.0), Rijndael-256 (2011)\r\n" +
+                "Installationspfad: " + Application.StartupPath,
+                "privateCrypt", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         // ------------------------------------------------------------------

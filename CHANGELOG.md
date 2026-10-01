@@ -31,6 +31,15 @@ folder operation usable on real data sets.
 
 ### Fixed
 
+- **Truncated labels in the password window.** The button read "entschluess"
+  instead of "entschlüsseln". The text needs 78 px in Segoe UI 9pt while the
+  button only offered 75 px after `FlatStyle` padding and auto-scaling. Buttons
+  are now 118 px and the form was widened from 340 to 400 px. This also fixed
+  the format description and the window title with long file names.
+- **File version raised to 3.0.0.0.** It still reported 2.0.0.0 while the
+  registry entry and the installer already said 3.0, so 2.0 and 3.0 could not
+  be told apart from the file properties alone — and the old version ended up
+  being tested by mistake.
 - **Existing files are no longer silently overwritten.** If a target already exists, the
   file is skipped and listed in the summary. Previously a folder containing both
   `report.txt` and `report.txt.protected` would decrypt over `report.txt` with no warning.
@@ -45,6 +54,7 @@ folder operation usable on real data sets.
   leftovers from a previous crash are removed on the next start.
 - **Explorer notified after uninstall.** The missing `SHChangeNotify` left the `.protected`
   icon and context menu entries visible in Explorer until it was restarted.
+- **An unreadable subdirectory no longer aborts the whole folder run.**
 - **Global exception handlers** show a dialog instead of the Windows crash prompt.
 - **`OpenSubKey` result null-checked** before use during install.
 
@@ -69,16 +79,37 @@ folder operation usable on real data sets.
 
 ### Added
 
+- **`--version` (and `/version`)** prints the running version, the active container
+  format, the KDF parameters and the install path. Makes it immediately visible which
+  version is actually running — useful because the Explorer context menu always points
+  at `%LocalAppData%\privateCrypt`, where an older copy may sit.
 - **Automated test suite** (119 tests, no external dependencies): round-trips across block
   and buffer boundaries, tamper detection, v1/v2 compatibility, atomic-write guarantees,
   `FileOps` edge cases.
+- **`Tests/e2e/Invoke-PrivateCryptTests.ps1`**: drives the real executable through Windows
+  UI Automation (25 checks). Its two documented pitfalls — non-ASCII in `.ps1` files under
+  PowerShell 5.1, and never taking the first button from a UI Automation hit list — are
+  explained in `docs/TESTING.md`, since both caused a wild goose chase during development.
+- **`docs/TESTING.md`**: what each test layer covers, how to run it, and an explicit list
+  of what is *not* covered.
 - **Fixed v1 test vectors** in `Tests/PolyAES.Tests/legacy-vectors`, generated with an
   independent implementation of the 2011 algorithm, so the legacy path cannot regress
   silently.
-- **`app.manifest`** — DPI awareness, Common Controls v6, explicit `asInvoker` execution
+- **`app.manifest`** - DPI awareness, Common Controls v6, explicit `asInvoker` execution
   level.
+- **`FileOps.cs`** - file-system helpers extracted from `Form1.cs` and thereby testable.
+- **AppId in the installer.** Without it, Inno derives the identity from name+version and
+  creates a second entry in "Apps & Features" on every version change instead of upgrading.
 - **Unified file-operation documentation** in `SECURITY.md`, including the rationale for
   the master-key design.
+
+### Verified
+
+- 119/119 unit tests pass.
+- 25/25 end-to-end checks pass against the built executable: encryption, round-trip,
+  **a bit flip in the ciphertext produces no plaintext at all**, wrong password, too-short
+  password, recursive folder encryption with `.db` skip and no double encryption, and the
+  overwrite protection.
 
 ### Known limitations (unchanged)
 

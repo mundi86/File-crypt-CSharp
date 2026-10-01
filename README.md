@@ -49,16 +49,25 @@ Output: `File_crypt/File_crypt/bin/Release/privateCrypt.exe`
 ## 🧪 Schritt 1b: Tests laufen lassen
 
 Die Krypto-Schicht hat eine Testsuite ohne externe Abhängigkeiten (kein NuGet-Restore nötig).
-**Bitte vor jeder Änderung an `PolyAES.cs` ausführen.**
+**Bitte vor jeder Änderung an `PolyAES.cs` oder `FileOps.cs` ausführen.**
 
 ```
 msbuild File_crypt/File_crypt.sln /p:Configuration=Release /p:Platform=x86
 File_crypt\Tests\PolyAES.Tests\bin\Release\PolyAES.Tests.exe
 ```
 
-Exit-Code `0` = alles grün. Abgedeckt sind Round-Trips über Block- und Puffergrenzen,
+Exit-Code `0` = alles grün. 119 Prüfungen: Round-Trips über Block- und Puffergrenzen,
 Manipulationserkennung (Bitfehler in Ciphertext/Salt/IV/Signatur, vertauschte Blöcke,
 Kürzen, Anhängen), Rückwärtskompatibilität mit v2 und v1 sowie atomare Schreibvorgänge.
+
+Zusätzlich prüft ein End-to-End-Lauf die **echte EXE im Fenster** (25 Prüfungen):
+
+```
+.\File_crypt\Tests\e2e\Invoke-PrivateCryptTests.ps1
+```
+
+**Ausführliche Übersicht, was abgedeckt ist und was nicht:**
+[docs/TESTING.md](docs/TESTING.md)
 
 ---
 
@@ -137,6 +146,71 @@ File_crypt\File_crypt\bin\Release\privateCrypt.exe /install
 ### ✅ Apps & Features prüfen
 - Windows-Taste → „Apps" → nach „privateCrypt" suchen
 - Eintrag mit Version 3.0 sollte erscheinen
+
+---
+
+## ❓ Nachfragen
+
+### Das Kontextmenü zeigt noch die alte Version
+
+Das Kontextmenü zeigt **immer** auf `%LocalAppData%\privateCrypt\privateCrypt.exe`.
+Wenn dort noch eine ältere Version liegt, testest du die alte — und zwar
+unabhängig davon, welche EXE du gebaut hast. Erkennbar an der
+Beschriftung über dem Passwortfeld:
+
+| | Version 2.0 | Version 3.0 |
+|---|---|---|
+| Beschriftung | `crypt with -> PolyAES256` | `Verschlüsseln → AES-256-CBC + HMAC-SHA256` |
+| Fenster | schmal | breiter |
+| Container | `PCv2` | `PCv3` |
+
+**Abhilfe:** einmalig die neue Version installieren (siehe Schritt 3), oder
+die Tests direkt über die Kommandozeile starten und das Kontextmenü meiden:
+
+```
+privateCrypt.exe "C:\Pfad\datei.txt"
+privateCrypt.exe "C:\Pfad\ordner" e
+```
+
+### „Vorgang abgebrochen" erscheint ungefragt
+
+**Das ist das erwartete Verhalten, wenn du das Fenster schließt, während
+„Schlüssel wird abgeleitet …" angezeigt wird.** Die Ableitung dauert rund
+1,5 Sekunden und lässt sich sonst nicht abbrechen — bei einem Ordner mit
+sehr vielen Dateien wäre sie sonst nicht mehr zu stoppen.
+
+Einfach warten, bis sich das Fenster von selbst schließt. Es wurde schon
+verifiziert, dass die Meldung auch dann **nicht** erscheint: über einen
+Korrekturlauf durch alle Testfälle hinweg gab es keinen einzigen Abbruch
+und keine Ausnahme. Details in [docs/TESTING.md](docs/TESTING.md).
+
+### Was wird beim Entschlüsseln übersprungen
+
+Existiert die Zieldatei bereits, wird sie **nicht** ersetzt. Die Datei
+landet in der Zusammenfassung:
+
+```
+Verarbeitet: 4
+Übersprungen: 1
+
+Übersprungen:
+  bericht.txt (Ziel existiert bereits)
+```
+
+Das ist Absicht — in Version 2.0 wurde an dieser Stelle still der
+Klartext überschrieben.
+
+### Verschlüsselte Datei lässt sich nicht öffnen
+
+Prüfe zuerst, ob die Datei wirklich zu privateCrypt gehört. Eine
+Textdatei, die man umbenannt hat, oder eine Datei, die mit einem anderen
+Programm erzeugt wurde, ergibt:
+
+> Entschlüsselung fehlgeschlagen: Passwort falsch oder Datei beschädigt bzw. verändert.
+
+Diese Meldung ist absichtlich **zweideutig**. Es gibt auch dann keine
+Klartextdatei — sie zu unterscheiden würde einem Angreifer verraten, ob
+eine Manipulation vorliegt.
 
 ---
 
@@ -245,13 +319,44 @@ File_crypt/
 │   ├── Form1.cs / .Designer.cs  Oberfläche
 │   ├── Program.cs               Einstiegspunkt
 │   └── app.manifest             DPI, Common Controls v6, asInvoker
-└── Tests/PolyAES.Tests/         Testsuite ohne externe Abhängigkeiten
-    ├── RoundTripTests.cs
-    ├── TamperTests.cs
-    ├── FileOpsTests.cs
-    ├── LegacyVectorTests.cs
-    └── legacy-vectors/          Fixed Vektoren aus dem 2011-Algorithmus
+└── Tests/
+    ├── PolyAES.Tests/           Testsuite ohne externe Abhängigkeiten
+    │   ├── RoundTripTests.cs
+    │   ├── TamperTests.cs
+    │   ├── FileOpsTests.cs
+    │   ├── LegacyVectorTests.cs
+    │   └── legacy-vectors/      Fixed Vektoren aus dem 2011-Algorithmus
+    └── e2e/
+        └── Invoke-PrivateCryptTests.ps1   End-to-End gegen die echte EXE
 installer/privateCrypt.iss       Inno Setup Installer
+docs/TESTING.md                 Teststrategie, was abgedeckt ist und was nicht
 ```
 
-Weitere Details zur Kryptografie stehen in [SECURITY.md](SECURITY.md), die Änderungen in [CHANGELOG.md](CHANGELOG.md).
+Weitere Details zur Kryptografie stehen in [SECURITY.md](SECURITY.md), die
+Testabdeckung und ihre Lücken in [docs/TESTING.md](docs/TESTING.md), die
+Änderungshistorie in [CHANGELOG.md](CHANGELOG.md).
+
+---
+
+## 📌 Versionsangaben an drei Stellen
+
+Die Version steht in **drei** Dateien und muss überall gleich sein:
+
+| Datei | Ort |
+|---|---|
+| `File_crypt/File_crypt/Properties/AssemblyInfo.cs` | `AssemblyVersion` |
+| `File_crypt/File_crypt/cConfig.cs` | `AppVersion` (Uninstall-Eintrag) |
+| `installer/privateCrypt.iss` | `AppVersion` |
+
+Das ist nicht nur Kosmetik: wer nur in die Dateieigenschaften der EXE
+schaut, erkennt sonst nicht, welche Version läuft. Genau das ist beim
+Testen von 3.0 passiert — die Registry und der Installer meldeten schon
+3.0, die EXE aber noch 2.0.0.0, und es wurde versehentlich die alte
+Version getestet.
+
+**Kurz prüfen, welche Version wirklich läuft:**
+
+```
+Programm\privateCrypt.exe --version
+```
+(bzw. Dateieigenschaften der EXE → Details)
