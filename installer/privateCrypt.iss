@@ -7,19 +7,26 @@
 ; The compiled setup will be placed in:  ..\dist\privateCrypt_Setup.exe
 
 #define AppName      "privateCrypt"
-#define AppVersion   "2.0"
+#define AppVersion   "3.0"
 #define AppPublisher "mundi86"
 #define AppExeName   "privateCrypt.exe"
 
 [Setup]
 AppName={#AppName}
+; Feste Identität über alle Versionen hinweg. Ohne AppId würde Inno die
+; Identität aus Name+Version ableiten und bei jedem Versionswechsel einen
+; zweiten Eintrag in "Apps & Features" anlegen statt ein Upgrade zu machen.
+; Wer bereits 2.0 installiert hat, muss diese einmal deinstallieren.
+AppId={{8BC17DCE-B1E3-4681-81D2-863B45CB0BF3}
 AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
 AppPublisher={#AppPublisher}
 AppPublisherURL=https://github.com/mundi86/File-crypt-CSharp
 AppSupportURL=https://github.com/mundi86/File-crypt-CSharp/issues
 
-; Per-user install — no UAC / admin required
+; Per-user install — no UAC / admin required.
+; This matches app.manifest, which requests execution level "asInvoker":
+; privateCrypt only ever writes to HKCU and %LocalAppData%.
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=commandline
 
@@ -38,7 +45,8 @@ SolidCompression=yes
 
 ; Uninstall display settings
 UninstallDisplayName={#AppName} {#AppVersion}
-UninstallDisplayIcon={app}\{#AppExeName}
+; Anfuehrungszeichen noetig: der Installationspfad kann Leerzeichen enthalten.
+UninstallDisplayIcon="{app}\{#AppExeName}"
 WizardStyle=modern
 
 ; .NET Framework 4.8 check (always present on Windows 10/11)

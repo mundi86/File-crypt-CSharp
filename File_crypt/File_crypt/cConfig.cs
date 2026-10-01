@@ -6,165 +6,260 @@ using System.Windows.Forms;
 
 namespace crytec
 {
-    class cConfig
+    /// <summary>
+    /// An-/Abmeldung des Explorers-Kontextmenus und der Dateizuordnung.
+    ///
+    /// <para>Es wird ausschliesslich HKCU verwendet, deshalb ist keine
+    /// Administratorrechte noetig - passend zum Installer, der ebenfalls
+    /// <c>PrivilegesRequired=lowest</c> setzt.</para>
+    ///
+    /// <para>Der Inno-Setup-Installer schreibt dieselben Schluessel. Diese Klasse
+    /// ist der Fallback fuer den Aufruf per Kommandozeile
+    /// (<c>privateCrypt.exe /install</c>).</para>
+    /// </summary>
+    internal static class cConfig
     {
         private const string AppName = "privateCrypt";
-        private const string UninstallRegKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\privateCrypt";
+        private const string AppVersion = "3.0";
+        private const string AppPublisher = "mundi86";
 
-        // Install path: %LocalAppData%\privateCrypt\privateCrypt.exe
-        // Consistent with the Inno Setup installer location.
-        private static string GetInstallDir() =>
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppName);
+        private const string UninstallRegKey =
+            @"Software\Microsoft\Windows\CurrentVersion\Uninstall\" + AppName;
+
+        /// <summary>Ursprunglicher Wurzelpfad unter HKCU\Software\Classes.</summary>
+        private const string ClassesRoot = @"Software\Classes";
+
+        // Die Anzeigenamen sind zugleich die Schluesselnamen. Sie bleiben
+        // unveraendert, damit bestehende Installationen nicht ihre Eintraege
+        // verlieren - die Verben sind in der Praxis bekannt.
+        private const string FileVerb = "Ver- | Entschlüsseln (AES256)";
+        private const string FolderEncryptVerb = "Verschlüsseln (AES256)";
+        private const string FolderDecryptVerb = "Entschlüsseln (AES256)";
+
+        private const string ProgId = "privateCrypt.protected";
 
         /// <summary>
-        /// Fallback CLI install (/install flag). The Inno Setup installer is the preferred way.
-        /// Uses HKCU (no admin required) — consistent with the installer.
+        /// Installationsverzeichnis: %LocalAppData%\privateCrypt\privateCrypt.exe -
+        /// identisch mit dem Ziel des Inno-Installers.
         /// </summary>
-        public static bool checkInstall()
+        private static string GetInstallDir()
+        {
+            return Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppName);
+        }
+
+        /// <summary>
+        /// Kontextmenues, Dateizuordnung und Uninstall-Eintrag anlegen und die
+        /// ausgefuehrte Datei dorthin kopieren.
+        /// </summary>
+        public static void checkInstall()
         {
             try
             {
                 string installDir = GetInstallDir();
-                string exePath = Path.Combine(installDir, "privateCrypt.exe");
+                string exePath = Path.Combine(installDir, AppName + ".exe");
 
-                // Already running from the install location — nothing to do
+                // Laeuft bereits aus dem Installationsverzeichnis - nichts zu tun.
                 if (string.Equals(Application.StartupPath, installDir, StringComparison.OrdinalIgnoreCase))
-                    return true;
+                    return;
 
-                string exeQuoted = $"\"{exePath}\"";
-
-                // Create install dir if needed
                 Directory.CreateDirectory(installDir);
 
-                // --- Context menu: single files ---
-                using (var classes = Registry.CurrentUser.OpenSubKey(@"Software\Classes", true))
-                {
-                    using (var cmd = classes.CreateSubKey(@"*\shell\Ver- | Entschlüsseln (AES256)\command"))
-                    using (var key = classes.OpenSubKey(@"*\shell\Ver- | Entschlüsseln (AES256)", true))
-                    {
-                        key.SetValue("icon", $"{exeQuoted},0");
-                        cmd.SetValue("", $"{exeQuoted} \"%1\"");
-                    }
-
-                    // --- Context menu: folders Verschlüsseln ---
-                    using (var cmd = classes.CreateSubKey(@"Directory\shell\Verschlüsseln (AES256)\command"))
-                    using (var key = classes.OpenSubKey(@"Directory\shell\Verschlüsseln (AES256)", true))
-                    {
-                        key.SetValue("Position", "Bottom");
-                        key.SetValue("icon", $"{exeQuoted},0");
-                        cmd.SetValue("", $"{exeQuoted} \"%1\" \"e\"");
-                    }
-
-                    // --- Context menu: folders Entschlüsseln ---
-                    using (var cmd = classes.CreateSubKey(@"Directory\shell\Entschlüsseln (AES256)\command"))
-                    using (var key = classes.OpenSubKey(@"Directory\shell\Entschlüsseln (AES256)", true))
-                    {
-                        key.SetValue("Position", "Bottom");
-                        key.SetValue("icon", $"{exeQuoted},0");
-                        cmd.SetValue("", $"{exeQuoted} \"%1\" \"d\"");
-                    }
-                }
-
-                // --- .protected file association (icon + Win11 top-level context menu) ---
-                // Using a ProgID-based association instead of *\shell means Windows 11 shows
-                // the verb directly in the top-level context menu (not under "Show more options").
-                using (var classes = Registry.CurrentUser.OpenSubKey(@"Software\Classes", true))
-                {
-                    // Map .protected extension to our ProgID
-                    using (var ext = classes.CreateSubKey(".protected"))
-                        ext.SetValue("", "privateCrypt.protected");
-
-                    // ProgID: friendly name + icon
-                    using (var progId = classes.CreateSubKey("privateCrypt.protected"))
-                    {
-                        progId.SetValue("", "Verschlüsselte Datei (AES256)");
-                        using (var icon = progId.CreateSubKey("DefaultIcon"))
-                            icon.SetValue("", $"{exeQuoted},0");
-
-                        // open = double-click and top-level "Entschlüsseln" verb
-                        using (var shell = progId.CreateSubKey("shell"))
-                        using (var open = shell.CreateSubKey("open"))
-                        {
-                            open.SetValue("", "🔓 Entschlüsseln (AES256)");
-                            using (var cmd = open.CreateSubKey("command"))
-                                cmd.SetValue("", $"{exeQuoted} \"%1\"");
-                        }
-                    }
-                }
-
-                // Refresh shell icon cache so the icon appears immediately
-                SHChangeNotify(0x08000000, 0, IntPtr.Zero, IntPtr.Zero);
-
-                // --- Uninstall entry (shows in Apps & Features) ---
-                using (var uninst = Registry.CurrentUser.CreateSubKey(UninstallRegKey))
-                {
-                    uninst.SetValue("DisplayName", AppName);
-                    uninst.SetValue("DisplayVersion", "2.0");
-                    uninst.SetValue("Publisher", "mundi86");
-                    uninst.SetValue("DisplayIcon", $"{exeQuoted},0");
-                    uninst.SetValue("UninstallString", $"{exeQuoted} /uninstall");
-                    uninst.SetValue("InstallLocation", installDir);
-                    uninst.SetValue("NoModify", 1, RegistryValueKind.DWord);
-                    uninst.SetValue("NoRepair", 1, RegistryValueKind.DWord);
-                }
-
-                // Copy executable to install location
+                // Zuerst die Datei kopieren, dann die Registrierung darauf
+                // ausrichten. Sonst zeigt der Menueeintrag kurz ins Leere.
                 if (File.Exists(exePath))
                     File.Delete(exePath);
                 File.Copy(Application.ExecutablePath, exePath);
 
-                MessageBox.Show("privateCrypt installed successfully.\nUse right-click on files or folders to encrypt/decrypt.");
-                return false;
+                string icon = "\"" + exePath + "\",0";
+
+                using (RegistryKey classes = Registry.CurrentUser.OpenSubKey(ClassesRoot, true))
+                {
+                    if (classes == null)
+                        throw new InvalidOperationException(
+                            "HKCU\\" + ClassesRoot + " konnte nicht geöffnet werden.");
+
+                    RegisterShellVerb(classes, @"*\shell\" + FileVerb, null, icon, "\"" + exePath + "\" \"%1\"");
+                    RegisterShellVerb(classes, @"Directory\shell\" + FolderEncryptVerb, "Bottom", icon,
+                        "\"" + exePath + "\" \"%1\" \"e\"");
+                    RegisterShellVerb(classes, @"Directory\shell\" + FolderDecryptVerb, "Bottom", icon,
+                        "\"" + exePath + "\" \"%1\" \"d\"");
+
+                    RegisterProtectedFileType(classes, icon);
+                }
+
+                WriteUninstallEntry(exePath, installDir, icon);
+
+                // Shell-Iconcache und Dateizuordnungen sofort aktualisieren,
+                // sonst erscheint das Symbol erst nach einem Neustart des Exploders.
+                NotifyShellChanged();
+
+                MessageBox.Show(
+                    AppName + " wurde installiert.\r\n\r\n" +
+                    "Im Kontextmenü von Dateien und Ordnern stehen jetzt " +
+                    "„Verschlüsseln“ und „Entschlüsseln“ zur Verfügung.",
+                    AppName, MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message);
-                return false;
+                MessageBox.Show(AppName + " konnte nicht installiert werden:\r\n\r\n" + ex.Message,
+                    AppName, MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
         /// <summary>
-        /// Removes all context menu entries, uninstall registry entry, and the installed executable.
-        /// Called by /uninstall argument and by the Inno Setup uninstaller as a fallback.
+        /// Legt einen Kontextmenueeintrag samt Unterpunkt "command" an.
+        /// </summary>
+        private static void RegisterShellVerb(RegistryKey classes, string subKey,
+            string position, string icon, string command)
+        {
+            using (RegistryKey verb = classes.CreateSubKey(subKey))
+            {
+                if (verb == null)
+                    throw new InvalidOperationException("Registrierung fehlgeschlagen: " + subKey);
+
+                if (icon != null)
+                    verb.SetValue("icon", icon);
+
+                if (position != null)
+                    verb.SetValue("Position", position);
+
+                using (RegistryKey cmd = verb.CreateSubKey("command"))
+                {
+                    if (cmd == null)
+                        throw new InvalidOperationException("Registrierung fehlgeschlagen: " + subKey + "\\command");
+                    cmd.SetValue("", command);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Ordnet ".protected" einer eigenen ProgID zu.
+        ///
+        /// <para>Bewusst ueber eine ProgID und nicht ueber "*\shell": Nur so zeigt
+        /// Windows 11 den Verb direkt im oberen Kontextmenue an, statt ihn unter
+        /// "Weitere Optionen" zu verstecken.</para>
+        /// </summary>
+        private static void RegisterProtectedFileType(RegistryKey classes, string icon)
+        {
+            using (RegistryKey ext = classes.CreateSubKey(FileOps.ProtectedExtension))
+            {
+                if (ext != null)
+                    ext.SetValue("", ProgId);
+            }
+
+            using (RegistryKey progId = classes.CreateSubKey(ProgId))
+            {
+                if (progId == null)
+                    throw new InvalidOperationException("Registrierung fehlgeschlagen: " + ProgId);
+
+                progId.SetValue("", "Verschlüsselte Datei (AES256)");
+
+                using (RegistryKey iconKey = progId.CreateSubKey("DefaultIcon"))
+                {
+                    if (iconKey != null)
+                        iconKey.SetValue("", icon);
+                }
+
+                // "open" = Doppelklick und der Verb im Win11-Kontextmenue.
+                using (RegistryKey open = progId.CreateSubKey(@"shell\open"))
+                {
+                    if (open == null)
+                        return;
+
+                    open.SetValue("", "🔓 Entschlüsseln (AES256)");
+
+                    using (RegistryKey cmd = open.CreateSubKey("command"))
+                    {
+                        if (cmd != null)
+                            cmd.SetValue("", "\"" + Path.Combine(GetInstallDir(), AppName + ".exe") + "\" \"%1\"");
+                    }
+                }
+            }
+        }
+
+        private static void WriteUninstallEntry(string exePath, string installDir, string icon)
+        {
+            using (RegistryKey uninst = Registry.CurrentUser.CreateSubKey(UninstallRegKey))
+            {
+                if (uninst == null)
+                    return;
+
+                uninst.SetValue("DisplayName", AppName);
+                uninst.SetValue("DisplayVersion", AppVersion);
+                uninst.SetValue("Publisher", AppPublisher);
+                uninst.SetValue("DisplayIcon", icon);
+                uninst.SetValue("UninstallString", "\"" + exePath + "\" /uninstall");
+                uninst.SetValue("InstallLocation", installDir);
+                uninst.SetValue("NoModify", 1, RegistryValueKind.DWord);
+                uninst.SetValue("NoRepair", 1, RegistryValueKind.DWord);
+            }
+        }
+
+        /// <summary>
+        /// Entfernt alle Kontextmenueeintraege, die Dateizuordnung, den
+        /// Uninstall-Eintrag und die installierte Datei.
+        ///
+        /// <para>Aufgerufen ueber das Argument /uninstall; der Inno-Setup-Uninstaller
+        /// raeumt die Schluessel selbst ab, dieser Pfad ist der Fallback.</para>
         /// </summary>
         public static void Uninstall()
         {
             try
             {
-                using (var classes = Registry.CurrentUser.OpenSubKey(@"Software\Classes", true))
+                using (RegistryKey classes = Registry.CurrentUser.OpenSubKey(ClassesRoot, true))
                 {
                     if (classes != null)
                     {
-                        TryDeleteSubKey(classes, @"*\shell\Ver- | Entschlüsseln (AES256)");
-                        TryDeleteSubKey(classes, @"Directory\shell\Verschlüsseln (AES256)");
-                        TryDeleteSubKey(classes, @"Directory\shell\Entschlüsseln (AES256)");
-                        TryDeleteSubKey(classes, ".protected");
-                        TryDeleteSubKey(classes, "privateCrypt.protected");
+                        TryDeleteSubKey(classes, @"*\shell\" + FileVerb);
+                        TryDeleteSubKey(classes, @"Directory\shell\" + FolderEncryptVerb);
+                        TryDeleteSubKey(classes, @"Directory\shell\" + FolderDecryptVerb);
+                        TryDeleteSubKey(classes, FileOps.ProtectedExtension);
+                        TryDeleteSubKey(classes, ProgId);
                     }
                 }
 
                 Registry.CurrentUser.DeleteSubKeyTree(UninstallRegKey, throwOnMissingSubKey: false);
 
-                // Remove installed exe (the installer removes the folder itself)
-                string exePath = Path.Combine(GetInstallDir(), "privateCrypt.exe");
+                // Die installierte Datei entfernen; den Ordner loescht der Installer.
+                string exePath = Path.Combine(GetInstallDir(), AppName + ".exe");
                 if (File.Exists(exePath))
                     File.Delete(exePath);
 
-                MessageBox.Show("privateCrypt wurde deinstalliert.");
+                // Ohne diesen Aufruf bleiben Symbol und Kontextmenue-Eintraege im
+                // Explorer sichtbar, bis er neu gestartet wird.
+                NotifyShellChanged();
+
+                MessageBox.Show(AppName + " wurde deinstalliert.", AppName,
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Fehler bei der Deinstallation: {ex.Message}");
+                MessageBox.Show("Fehler bei der Deinstallation:\r\n\r\n" + ex.Message,
+                    AppName, MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
-        private static void TryDeleteSubKey(RegistryKey parent, string subkey)
+        private static void TryDeleteSubKey(RegistryKey parent, string subKey)
         {
-            try { parent.DeleteSubKeyTree(subkey, throwOnMissingSubKey: false); } catch { }
+            try { parent.DeleteSubKeyTree(subKey, throwOnMissingSubKey: false); }
+            catch { }
         }
 
-        // Notify shell to refresh icons / file associations immediately
+        /// <summary>
+        /// Teilt der Shell mit, dass sich Symbolcache und Dateizuordnungen
+        /// geaendert haben (SHCNE_ASSOCCHANGED).
+        /// </summary>
+        private static void NotifyShellChanged()
+        {
+            try { SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, IntPtr.Zero, IntPtr.Zero); }
+            catch { }
+        }
+
+        private const int SHCNE_ASSOCCHANGED = 0x08000000;
+        private const uint SHCNF_IDLIST = 0x0000;
+
         [DllImport("shell32.dll")]
-        private static extern void SHChangeNotify(int wEventId, int uFlags, IntPtr dwItem1, IntPtr dwItem2);
+        private static extern void SHChangeNotify(int wEventId, uint uFlags, IntPtr dwItem1, IntPtr dwItem2);
     }
 }

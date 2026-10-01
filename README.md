@@ -12,11 +12,14 @@ Ein schlankes Windows-Tool zum Ver- und Entschlüsseln von Dateien und Ordnern d
 
 - 🖱️ Windows-Kontextmenü-Integration (Rechtsklick auf Datei oder Ordner)
 - 🔒 Verschlüsselt einzelne Dateien oder ganze Ordner rekursiv
-- 🔑 AES-256-CBC mit PBKDF2-SHA256 (100.000 Iterationen)
+- 🔑 AES-256-CBC **plus HMAC-SHA256** (Integritätsschutz) mit PBKDF2-SHA256 (300.000 Iterationen)
 - 🛡️ Sicheres Löschen — Originaldaten werden vor dem Löschen überschrieben
+- 🚫 Bestehende Dateien werden nie ungefragt überschrieben
+- 📊 Ordner-Verschlüsselung mit Fortschrittsbalken und **Abbrechen**-Schaltfläche
+- 💾 Geringer Speicherbedarf — auch sehr große Dateien sind kein Problem
 - 👁️ Quick-Edit: Datei temporär entschlüsseln, anzeigen und automatisch wieder löschen
 - 📦 Kein Admin nötig — per-User Installation ohne UAC
-- 🔄 Rückwärtskompatibel mit Dateien die mit der alten Version verschlüsselt wurden
+- 🔄 Rückwärtskompatibel mit Dateien aus den Versionen 2.0 und 1.0
 - ➕ Saubere Deinstallation über Windows „Apps & Features"
 - 🔓 `.protected` Dateien zeigen Schloss-Icon im Explorer + „Entschlüsseln" direkt im Win11 Top-Menü
 - 🌗 Modernes Passwort-Fenster — passt sich automatisch dem Hell/Dunkel-Theme an (Win11 runde Ecken)
@@ -40,6 +43,22 @@ msbuild File_crypt/File_crypt.sln /p:Configuration=Release /p:Platform=x86
 ```
 
 Output: `File_crypt/File_crypt/bin/Release/privateCrypt.exe`
+
+---
+
+## 🧪 Schritt 1b: Tests laufen lassen
+
+Die Krypto-Schicht hat eine Testsuite ohne externe Abhängigkeiten (kein NuGet-Restore nötig).
+**Bitte vor jeder Änderung an `PolyAES.cs` ausführen.**
+
+```
+msbuild File_crypt/File_crypt.sln /p:Configuration=Release /p:Platform=x86
+File_crypt\Tests\PolyAES.Tests\bin\Release\PolyAES.Tests.exe
+```
+
+Exit-Code `0` = alles grün. Abgedeckt sind Round-Trips über Block- und Puffergrenzen,
+Manipulationserkennung (Bitfehler in Ciphertext/Salt/IV/Signatur, vertauschte Blöcke,
+Kürzen, Anhängen), Rückwärtskompatibilität mit v2 und v1 sowie atomare Schreibvorgänge.
 
 ---
 
@@ -84,7 +103,7 @@ File_crypt\File_crypt\bin\Release\privateCrypt.exe /install
 ### ✅ Datei verschlüsseln
 1. Beliebige Testdatei anlegen (z.B. `test.txt` mit einem Text)
 2. Rechtsklick auf die Datei → **Ver- | Entschlüsseln (AES256)**
-3. Passwort eingeben (mind. 4 Zeichen) → Enter oder Button
+3. Passwort eingeben (mind. 8 Zeichen) → Enter oder Button
 4. Ergebnis: `test.txt` ist weg, `test.txt.protected` ist da
 
 ### ✅ Datei entschlüsseln
@@ -92,22 +111,32 @@ File_crypt\File_crypt\bin\Release\privateCrypt.exe /install
 2. Gleiches Passwort eingeben → Enter
 3. Ergebnis: `test.txt` wieder da, `.protected` Datei weg
 
+### ✅ Integritätsschutz prüfen
+1. `test.txt.protected` mit einem Hex-Editor öffnen
+2. Ein beliebiges Byte im Ciphertext-Bereich umstellen und speichern
+3. Versuch zu entschlüsseln → **„Entschlüsselung fehlgeschlagen"**, es entsteht keine Klartextdatei
+
 ### ✅ Quick-Edit testen
 1. Eine Bilddatei (`.jpg`) verschlüsseln → `bild.jpg.protected`
 2. Rechtsklick auf `.protected` → Passwort eingeben
 3. Die **Quick-Edit Checkbox ist automatisch aktiviert** → Enter
 4. Bild öffnet sich im Viewer
-5. Viewer schließen → App beendet sich, Temp-Datei gelöscht
+5. Viewer schließen → App beendet sich, Temp-Datei wird gelöscht
 
 ### ✅ Ordner verschlüsseln
 1. Ordner mit mehreren Dateien anlegen
 2. Rechtsklick auf Ordner → **Verschlüsseln (AES256)**
-3. Passwort eingeben → alle Dateien werden `.protected`
+3. Passwort eingeben → Fortschrittsbalken läuft, alle Dateien werden `.protected`
 4. Rechtsklick auf Ordner → **Entschlüsseln (AES256)** → zurück
+
+### ✅ Überschreiben-Schutz prüfen
+1. `test.txt` und `test.txt.protected` nebeneinander anlegen
+2. Ordner entschlüsseln → `test.txt` bleibt **unangetastet**, `test.txt` wird in der
+   Zusammenfassung als übersprungen aufgelistet
 
 ### ✅ Apps & Features prüfen
 - Windows-Taste → „Apps" → nach „privateCrypt" suchen
-- Eintrag mit Version 2.0 sollte erscheinen
+- Eintrag mit Version 3.0 sollte erscheinen
 
 ---
 
@@ -121,7 +150,7 @@ Windows-Taste → Apps → „privateCrypt" suchen → Deinstallieren
 %LocalAppData%\privateCrypt\privateCrypt.exe /uninstall
 ```
 
-Entfernt: Kontextmenü-Einträge, installierte EXE, Uninstall-Eintrag
+Entfernt: Kontextmenü-Einträge, Dateizuordnung, installierte EXE, Uninstall-Eintrag
 
 ---
 
@@ -142,10 +171,16 @@ Rechtsklick auf eine `.protected` Datei → **🔓 Entschlüsseln (AES256)** (di
 ### Ordner verschlüsseln / entschlüsseln
 Rechtsklick auf einen Ordner → **Verschlüsseln (AES256)** oder **Entschlüsseln (AES256)**
 
-Alle Dateien im Ordner (rekursiv, außer `.db` Dateien) werden verarbeitet.
+Alle Dateien im Ordner (rekursiv, außer `.db` Dateien) werden verarbeitet. Verzeichnisverknüpfungen (Junctions) werden übersprungen, damit der Lauf nicht in Zyklen gerät. Während der Verarbeitung lässt sich der Vorgang jederzeit **abbrechen**.
 
 ### Quick-Edit
-Bei `.protected` Dateien ist die **Quick-Edit Checkbox** aktiviert: Die Datei wird temporär nach `%TEMP%` entschlüsselt, mit dem Standard-Programm geöffnet, und beim Schließen automatisch sicher gelöscht.
+Bei `.protected` Dateien ist die **Quick-Edit Checkbox** aktiviert: Die Datei wird temporär nach `%TEMP%\privateCrypt-quickedit` entschlüsselt, mit dem Standard-Programm geöffnet, und beim Schließen automatisch sicher gelöscht. Reste eines zuvor abgestürzten Programms werden beim nächsten Start entfernt.
+
+### Kommandozeile
+```
+privateCrypt.exe "<Datei oder Ordner>" [e|d]
+```
+`e` = verschlüsseln (Standard), `d` = entschlüsseln. Wird normalerweise nicht direkt gebraucht, da das Kontextmenü die Aufgabe übernimmt.
 
 ---
 
@@ -153,12 +188,15 @@ Bei `.protected` Dateien ist die **Quick-Edit Checkbox** aktiviert: Die Datei wi
 
 | Eigenschaft | Wert |
 |---|---|
-| Algorithmus | AES-256-CBC |
-| Schlüsselableitung | PBKDF2-SHA256, 100.000 Iterationen |
-| Salt | 32 Byte (zufällig) |
-| IV | 16 Byte (zufällig) |
-| Dateiformat | `PCv2` Magic + Salt + IV + Ciphertext |
+| Algorithmus | AES-256-CBC + HMAC-SHA256 (Encrypt-then-MAC) |
+| Schlüsselableitung | PBKDF2-SHA256, 300.000 Iterationen, einmal pro Sitzung |
+| Dateischlüssel | pro Datei aus dem Masterschlüssel per HMAC abgeleitet |
+| Salt / IV | 32 / 16 Byte, pro Datei zufällig |
+| Dateiformat | `PCv3` Magic + Salt + IV + Ciphertext + HMAC (32 Byte) |
+| Speicherbedarf | konstant, unabhängig von der Dateigröße (streaming) |
+| Schreibweise | atomar über temporäre Datei, nie halb geschrieben |
 | Datei-Löschung | Überschreiben mit Nullbytes vor Delete |
+| Mindest-Passwort | 8 Zeichen beim Verschlüsseln, 4 beim Entschüsseln |
 | Framework | .NET Framework 4.8 (vorinstalliert auf Win 10/11) |
 | Platform | x86 (32-bit) |
 | Installation | Per-User, kein Admin nötig |
@@ -167,19 +205,53 @@ Bei `.protected` Dateien ist die **Quick-Edit Checkbox** aktiviert: Die Datei wi
 | Datei-Icon | `.protected` Dateien zeigen Schloss-Icon im Explorer |
 | Win11-Menü | `.protected` Verb direkt im Top-Level (via ProgID) |
 
-### Dateiformat v2 (aktuell)
+### Dateiformat v3 (aktuell)
 ```
-[PCv2 4 Bytes] [Salt 32 Bytes] [IV 16 Bytes] [Ciphertext]
+[PCv3 4 B] [Salt 32 B] [IV 16 B] [Ciphertext ...] [HMAC-SHA256 32 B]
 ```
+Die Signatur wird **geprüft, bevor** überhaupt Klartext entsteht. Ein falsches Passwort und
+eine manipulierte Datei führen bewusst zur selben Meldung.
+
+### Dateiformat v2 (nur noch Lesen)
+Dateien aus Version 2.0 (`[PCv2][Salt][IV][Ciphertext]`) werden automatisch erkannt und
+können weiterhin entschlüsselt werden. Sie haben **keinen** Integritätsschutz — am besten
+einmal entschlüsseln und neu verschlüsseln.
 
 ### Dateiformat v1 (Legacy, nur Lesen)
-Dateien die mit der alten Version erstellt wurden werden automatisch erkannt und können weiterhin entschlüsselt werden.
+Dateien aus der 1.0-Version von 2011 werden automatisch erkannt und können weiterhin
+entschlüsselt werden. Auch hier fehlt der Integritätsschutz.
 
 ---
 
 ## ⚠️ Hinweise
 
-- Das Passwort muss mindestens 4 Zeichen lang sein
+- Das Passwort muss beim **Verschlüsseln** mindestens 8 Zeichen lang sein (beim Entschlüsseln 4, damit ältere Dateien zugänglich bleiben). Eine lange Passphrase ist wesentlich wirksamer als jede Einstellung hier.
 - Die Originaldatei wird nach der Verschlüsselung sicher überschrieben und gelöscht — **kein Backup!**
+- Existiert die Zieldatei bereits, wird sie **nicht** überschrieben: die Datei wird übersprungen und in der Zusammenfassung aufgelistet.
+- Der Ordner-Durchlauf lässt sich jederzeit abbrechen. Bereits fertiggestellte Dateien bleiben verarbeitet, die übrigen sind unverändert.
 - Auf SSDs mit Wear-Leveling ist physisch vollständiges Löschen nicht garantiert — schützt aber vor Standard-Recovery-Tools
 - `.db` Dateien werden beim Ordner-Modus übersprungen
+
+---
+
+## 📂 Projektstruktur
+
+```
+File_crypt/
+├── File_crypt/                  Hauptprogramm
+│   ├── PolyAES.cs               Verschlüsselung (v3/v2/v1), streaming
+│   ├── FileOps.cs               Dateisystem-Helfer (Endungen, Sammeln, SecureDelete)
+│   ├── cConfig.cs               Kontextmenü + Dateizuordnung (HKCU)
+│   ├── Form1.cs / .Designer.cs  Oberfläche
+│   ├── Program.cs               Einstiegspunkt
+│   └── app.manifest             DPI, Common Controls v6, asInvoker
+└── Tests/PolyAES.Tests/         Testsuite ohne externe Abhängigkeiten
+    ├── RoundTripTests.cs
+    ├── TamperTests.cs
+    ├── FileOpsTests.cs
+    ├── LegacyVectorTests.cs
+    └── legacy-vectors/          Fixed Vektoren aus dem 2011-Algorithmus
+installer/privateCrypt.iss       Inno Setup Installer
+```
+
+Weitere Details zur Kryptografie stehen in [SECURITY.md](SECURITY.md), die Änderungen in [CHANGELOG.md](CHANGELOG.md).

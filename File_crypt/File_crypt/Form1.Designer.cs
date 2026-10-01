@@ -19,6 +19,8 @@ namespace crytec
             this.button1 = new System.Windows.Forms.Button();
             this.checkBox1 = new System.Windows.Forms.CheckBox();
             this.label1 = new System.Windows.Forms.Label();
+            this.progressBar1 = new System.Windows.Forms.ProgressBar();
+            this.button2 = new System.Windows.Forms.Button();
             this.SuspendLayout();
 
             // textBox1 — password field
@@ -46,7 +48,7 @@ namespace crytec
             this.button1.Cursor = System.Windows.Forms.Cursors.Hand;
             this.button1.Click += new System.EventHandler(this.button1_Click);
 
-            // checkBox1 — quick edit option
+            // checkBox1 — Quick Edit option
             this.checkBox1.AutoSize = true;
             this.checkBox1.Location = new System.Drawing.Point(14, 66);
             this.checkBox1.Name = "checkBox1";
@@ -57,19 +59,45 @@ namespace crytec
             this.checkBox1.UseVisualStyleBackColor = true;
             this.checkBox1.Visible = false;
 
-            // label1 — info / mode label
-            this.label1.AutoSize = true;
-            this.label1.Location = new System.Drawing.Point(12, 10);
+            // label1 — algorithm / mode info
+            this.label1.AutoSize = false;
+            this.label1.Location = new System.Drawing.Point(12, 8);
             this.label1.Name = "label1";
-            this.label1.Size = new System.Drawing.Size(160, 15);
+            this.label1.Size = new System.Drawing.Size(316, 18);
             this.label1.TabIndex = 3;
             this.label1.Text = "label1";
             this.label1.Font = new System.Drawing.Font("Segoe UI", 9F);
+
+            // progressBar1 — only visible during long folder operations
+            this.progressBar1.Location = new System.Drawing.Point(12, 118);
+            this.progressBar1.Name = "progressBar1";
+            this.progressBar1.Size = new System.Drawing.Size(316, 16);
+            this.progressBar1.TabIndex = 4;
+            this.progressBar1.Style = System.Windows.Forms.ProgressBarStyle.Continuous;
+            this.progressBar1.Visible = false;
+
+            // button2 — cancel, only visible during long folder operations
+            this.button2.Location = new System.Drawing.Point(240, 140);
+            this.button2.Name = "button2";
+            this.button2.Size = new System.Drawing.Size(88, 26);
+            this.button2.TabIndex = 5;
+            this.button2.Text = "Abbrechen";
+            this.button2.Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Regular);
+            this.button2.UseVisualStyleBackColor = false;
+            this.button2.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.button2.FlatAppearance.BorderSize = 0;
+            this.button2.BackColor = System.Drawing.Color.FromArgb(200, 200, 200);
+            this.button2.ForeColor = System.Drawing.Color.FromArgb(30, 30, 30);
+            this.button2.Cursor = System.Windows.Forms.Cursors.Hand;
+            this.button2.Visible = false;
+            this.button2.Click += new System.EventHandler(this.button2_Click);
 
             // Form1
             this.AutoScaleDimensions = new System.Drawing.SizeF(7F, 15F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(340, 95);
+            this.Controls.Add(this.button2);
+            this.Controls.Add(this.progressBar1);
             this.Controls.Add(this.label1);
             this.Controls.Add(this.checkBox1);
             this.Controls.Add(this.button1);
@@ -82,7 +110,6 @@ namespace crytec
             this.Padding = new System.Windows.Forms.Padding(10);
             this.Load += new System.EventHandler(this.Form1_Load);
             this.ResumeLayout(false);
-            this.PerformLayout();
         }
 
         #endregion
@@ -91,5 +118,7 @@ namespace crytec
         private System.Windows.Forms.Button button1;
         private System.Windows.Forms.CheckBox checkBox1;
         private System.Windows.Forms.Label label1;
+        private System.Windows.Forms.ProgressBar progressBar1;
+        private System.Windows.Forms.Button button2;
     }
 }
