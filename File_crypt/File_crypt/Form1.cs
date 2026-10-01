@@ -137,7 +137,7 @@ namespace crytec
             else
             {
                 button1.Text = "entschlüsseln";
-                label1.Text = "Entschlüsseln → " + DescribeFormat(_targetPath);
+                label1.Text = DescribeFormat(_targetPath);
                 checkBox1.Visible = !_isDirectory;
                 checkBox1.Checked = true;
             }
@@ -201,15 +201,15 @@ namespace crytec
             {
                 switch (PolyAES.DetectFormat(path))
                 {
-                    case ContainerFormat.V3: return "AES-256-CBC + HMAC (PCv3, mit Integritätsschutz)";
-                    case ContainerFormat.V2: return "AES-256-CBC (PCv2, ohne Integritätsschutz)";
-                    case ContainerFormat.Legacy: return "Rijndael-256 (2011, ohne Integritätsschutz)";
-                    default: return "unbekanntes Format";
+                    case ContainerFormat.V3: return "Entschlüsseln → PCv3 · AES-256-CBC + HMAC-SHA256";
+                    case ContainerFormat.V2: return "Entschlüsseln → PCv2 · ohne Integritätsschutz";
+                    case ContainerFormat.Legacy: return "Entschlüsseln → Rijndael-256 (2011) · ohne Integritätsschutz";
+                    default: return "Entschlüsseln → unbekanntes Format";
                 }
             }
             catch
             {
-                return "Format unbekannt";
+                return "Entschlüsseln → unbekanntes Format";
             }
         }
 
@@ -746,7 +746,7 @@ IProgress<ProgressState> progress = new Progress<ProgressState>(OnProgress);
                 progressBar1.Value = 0;
                 label1.Text = _encryptMode
                     ? "Verschlüsseln → AES-256-CBC + HMAC-SHA256"
-                    : "Entschlüsseln → " + DescribeFormat(_targetPath);
+                    : DescribeFormat(_targetPath);
             }
         }
 

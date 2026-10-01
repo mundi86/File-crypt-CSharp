@@ -24,19 +24,24 @@ namespace crytec
             this.SuspendLayout();
 
             // textBox1 — password field
+            //
+            // Breiten: der Text "entschlüsseln" misst bei Segoe UI 9pt rund 78 px.
+            // Bei 88 px Buttonbreite blieb nach FlatStyle-Padding und AutoScale nur
+            // 75 px - der Text wurde abgeschnitten. Deshalb bekommt der Button
+            // 118 px und das Passwortfeld entsprechend weniger.
             this.textBox1.Location = new System.Drawing.Point(12, 32);
             this.textBox1.Name = "textBox1";
             this.textBox1.PasswordChar = '●';
-            this.textBox1.Size = new System.Drawing.Size(222, 24);
+            this.textBox1.Size = new System.Drawing.Size(250, 24);
             this.textBox1.TabIndex = 0;
             this.textBox1.Font = new System.Drawing.Font("Segoe UI", 10F);
             this.textBox1.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
             this.textBox1.KeyDown += new System.Windows.Forms.KeyEventHandler(this.textBox1_KeyDown);
 
             // button1 — action button
-            this.button1.Location = new System.Drawing.Point(240, 32);
+            this.button1.Location = new System.Drawing.Point(270, 32);
             this.button1.Name = "button1";
-            this.button1.Size = new System.Drawing.Size(88, 26);
+            this.button1.Size = new System.Drawing.Size(118, 26);
             this.button1.TabIndex = 1;
             this.button1.Text = "verschlüsseln";
             this.button1.Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Regular);
@@ -63,7 +68,7 @@ namespace crytec
             this.label1.AutoSize = false;
             this.label1.Location = new System.Drawing.Point(12, 8);
             this.label1.Name = "label1";
-            this.label1.Size = new System.Drawing.Size(316, 18);
+            this.label1.Size = new System.Drawing.Size(376, 18);
             this.label1.TabIndex = 3;
             this.label1.Text = "label1";
             this.label1.Font = new System.Drawing.Font("Segoe UI", 9F);
@@ -71,15 +76,16 @@ namespace crytec
             // progressBar1 — only visible during long folder operations
             this.progressBar1.Location = new System.Drawing.Point(12, 118);
             this.progressBar1.Name = "progressBar1";
-            this.progressBar1.Size = new System.Drawing.Size(316, 16);
+            this.progressBar1.Size = new System.Drawing.Size(376, 16);
             this.progressBar1.TabIndex = 4;
             this.progressBar1.Style = System.Windows.Forms.ProgressBarStyle.Continuous;
             this.progressBar1.Visible = false;
 
             // button2 — cancel, only visible during long folder operations
-            this.button2.Location = new System.Drawing.Point(240, 140);
+            // Gleiche Breite wie button1, damit beide Buender buendig ausgerichtet sind.
+            this.button2.Location = new System.Drawing.Point(270, 140);
             this.button2.Name = "button2";
-            this.button2.Size = new System.Drawing.Size(88, 26);
+            this.button2.Size = new System.Drawing.Size(118, 26);
             this.button2.TabIndex = 5;
             this.button2.Text = "Abbrechen";
             this.button2.Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Regular);
@@ -95,7 +101,7 @@ namespace crytec
             // Form1
             this.AutoScaleDimensions = new System.Drawing.SizeF(7F, 15F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(340, 95);
+            this.ClientSize = new System.Drawing.Size(400, 95);
             this.Controls.Add(this.button2);
             this.Controls.Add(this.progressBar1);
             this.Controls.Add(this.label1);
