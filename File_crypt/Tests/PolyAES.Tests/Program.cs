@@ -108,6 +108,32 @@ namespace crytec.Tests
             }
         }
 
+        /// <summary>
+        /// Kippt genau ein Bit - und garantiert damit, dass sich die Datei auch
+        /// wirklich aendert.
+        ///
+        /// <para>Nicht einfach einen festen Wert ueberschreiben: der Inhalt einer
+        /// verschluesselten Datei ist zufaellig. Wer "0xFF" schreibt, trifft mit
+        /// einer Wahrscheinlichkeit von 1:256 bereits den vorhandenen Wert, die
+        /// Manipulation bleibt dann wirkungslos, die Datei ist weiterhin gueltig,
+        /// die Entschluesselung gelingt - und der Test schlaegt fehl, ohne dass
+        /// etwas im Programm kaputt waere. Mit XOR kann das nicht passieren.</para>
+        /// </summary>
+        internal static void FlipBit(string path, long offset, int mask = 0x01)
+        {
+            using (var fs = new FileStream(path, FileMode.Open, FileAccess.ReadWrite))
+            {
+                fs.Position = offset;
+                int b = fs.ReadByte();
+                if (b < 0)
+                    throw new IOException("Bitflip ueber Dateiende hinaus: " + path + " @ " + offset);
+
+                fs.Position = offset;
+                fs.WriteByte((byte)(b ^ mask));
+                fs.Flush(true);
+            }
+        }
+
         internal static void Truncate(string path, long newLength)
         {
             using (var fs = new FileStream(path, FileMode.Open, FileAccess.ReadWrite))

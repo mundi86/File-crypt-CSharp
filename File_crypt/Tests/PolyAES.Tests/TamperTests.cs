@@ -36,28 +36,28 @@ namespace crytec.Tests
                 () => session(wrongPw).DecryptFile(p, Path.Combine(dir, "o1"), true));
             t.Check("kein Klartext erzeugt (falsches Passwort)", !File.Exists(Path.Combine(dir, "o1")));
 
-            // --- 2. Bitflip im Ciphertext ---
+            // --- 2. Bitflip im Ciphertext (XOR, damit garantiert etwas kippt) ---
             p = Copy(dir, good, "flip_ct.protected");
-            Program.OverwriteBytes(p, HeaderSize + 500, new byte[] { 0x01 });
+            Program.FlipBit(p, HeaderSize + 500);
             t.CheckThrows<CryptographicException>("Bitflip im Ciphertext wird erkannt",
                 () => session(pw).DecryptFile(p, Path.Combine(dir, "o2"), true));
             t.Check("kein Klartext erzeugt (Ciphertext)", !File.Exists(Path.Combine(dir, "o2")));
 
             // --- 3. Bitflip im Salt ---
             p = Copy(dir, good, "flip_salt.protected");
-            Program.OverwriteBytes(p, 8, new byte[] { 0x01 });
+            Program.FlipBit(p, 8);
             t.CheckThrows<CryptographicException>("Bitflip im Salt wird erkannt",
                 () => session(pw).DecryptFile(p, Path.Combine(dir, "o3"), true));
 
             // --- 4. Bitflip im IV ---
             p = Copy(dir, good, "flip_iv.protected");
-            Program.OverwriteBytes(p, 40, new byte[] { 0x01 });
+            Program.FlipBit(p, 40);
             t.CheckThrows<CryptographicException>("Bitflip im IV wird erkannt",
                 () => session(pw).DecryptFile(p, Path.Combine(dir, "o4"), true));
 
             // --- 5. Bitflip in der Signatur ---
             p = Copy(dir, good, "flip_tag.protected");
-            Program.OverwriteBytes(p, good.Length - 1, new byte[] { 0x01 });
+            Program.FlipBit(p, good.Length - 1);
             t.CheckThrows<CryptographicException>("Bitflip in der Signatur wird erkannt",
                 () => session(pw).DecryptFile(p, Path.Combine(dir, "o5"), true));
 
@@ -96,7 +96,7 @@ namespace crytec.Tests
             File.WriteAllBytes(dest, Program.MakeData(7));
             byte[] before = File.ReadAllBytes(dest);
             p = Copy(dir, good, "atomic.protected");
-            Program.OverwriteBytes(p, HeaderSize + 100, new byte[] { 0xFF });
+            Program.FlipBit(p, HeaderSize + 100);
             try { session(pw).DecryptFile(p, dest, true); } catch (CryptographicException) { }
             t.Check("Zieldatei bei fehlgeschlagener Entschluesselung unveraendert",
                     Program.SameBytes(before, File.ReadAllBytes(dest)));
