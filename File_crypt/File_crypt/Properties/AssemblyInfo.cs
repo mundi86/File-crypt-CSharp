@@ -5,10 +5,10 @@ using System.Runtime.InteropServices;
 // Allgemeine Informationen über eine Assembly werden über die folgenden 
 // Attribute gesteuert. Ändern Sie diese Attributwerte, um die Informationen zu ändern,
 // die mit einer Assembly verknüpft sind.
-[assembly: AssemblyTitle("File_crypt")]
-[assembly: AssemblyDescription("")]
+[assembly: AssemblyTitle("privateCrypt")]
+[assembly: AssemblyDescription("Dateiverschlüsselung für Windows (AES-256-CBC + HMAC-SHA256)")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("")]
+[assembly: AssemblyCompany("mundi86")]
 [assembly: AssemblyProduct("privateCrypt")]
 [assembly: AssemblyCopyright("Copyright © 2011-2026")]
 [assembly: AssemblyTrademark("")]
@@ -32,5 +32,7 @@ using System.Runtime.InteropServices;
 // Sie können alle Werte angeben oder die standardmäßigen Build- und Revisionsnummern 
 // übernehmen, indem Sie "*" eingeben:
 // [assembly: AssemblyVersion("1.0.*")]
-[assembly: AssemblyVersion("2.0.0.0")]
-[assembly: AssemblyFileVersion("2.0.0.0")]
+// Muss mit der Version in cConfig.cs (Uninstall-Eintrag) und in
+// installer/privateCrypt.iss uebereinstimmen.
+[assembly: AssemblyVersion("3.0.0.0")]
+[assembly: AssemblyFileVersion("3.0.0.0")]
