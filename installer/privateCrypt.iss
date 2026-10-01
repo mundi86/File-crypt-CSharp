@@ -30,6 +30,18 @@ AppSupportURL=https://github.com/mundi86/File-crypt-CSharp/issues
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=commandline
 
+; Windows 10 1903 ist die erste Version, die .NET Framework 4.8 mitbringt.
+; Das Programm ist gegen 4.8 kompiliert; darauf prueft Inno nicht von
+; selbst, deshalb der Mindeststand hier. Ohne die Zeile liefe der Installer
+; auch auf alten Win10-Builds und die EXE scheiterte dann beim Start.
+MinVersion=10.0.17763
+
+; Laeuft privateCrypt gerade, kann die EXE nicht ersetzt werden. Der
+; Installer schliesst sie dann und startet sie danach nicht wieder - sie
+; ist ein Kontextmenue-Eintrag und laeuft nicht im Hintergrund.
+CloseApplications=yes
+RestartApplications=no
+
 DefaultDirName={localappdata}\{#AppName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
@@ -57,7 +69,13 @@ Name: "german";   MessagesFile: "compiler:Languages\German.isl"
 Name: "english";  MessagesFile: "compiler:Default.isl"
 
 [Files]
+; Auch die .config mitliefern: sie bindet die EXE an .NET Framework 4.8.
+; Ohne sie nimmt Windows .NET 4.0 als Ziel und startet die EXE nicht.
 Source: "..\File_crypt\File_crypt\bin\Release\{#AppExeName}"; \
+        DestDir: "{app}"; \
+        Flags: ignoreversion
+
+Source: "..\File_crypt\File_crypt\bin\Release\{#AppExeName}.config"; \
         DestDir: "{app}"; \
         Flags: ignoreversion
 
@@ -129,6 +147,18 @@ Root: HKCU; \
       ValueType: string; ValueName: ""; \
       ValueData: "privateCrypt.protected"; \
       Flags: uninsdeletekey
+
+; Ohne diese beiden Angaben stuft Windows die Datei als unbekannten Typ ein
+; und blendet Dateityp-Dialoge bzw. "Oeffnen mit" anders.
+Root: HKCU; \
+      Subkey: "Software\Classes\.protected"; \
+      ValueType: string; ValueName: "Content Type"; \
+      ValueData: "application/privateCrypt.protected"
+
+Root: HKCU; \
+      Subkey: "Software\Classes\.protected"; \
+      ValueType: string; ValueName: "PerceivedType"; \
+      ValueData: "text"
 
 Root: HKCU; \
       Subkey: "Software\Classes\privateCrypt.protected"; \
