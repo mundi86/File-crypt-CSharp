@@ -6,15 +6,15 @@ using System.Text;
 namespace crytec.Tests
 {
     /// <summary>
-    /// Prueft, dass Manipulationen an einer v3-Datei zuverlaessig auffallen.
+    /// Prueft, dass Manipulationen an einer v4-Datei zuverlaessig auffallen.
     /// Ohne HMAC (Format v2/v1) waeren diese Faelle stillschweigend
-    /// durchgegangen - genau die Luecke, die v3 schliesst.
+    /// durchgegangen - genau die Luecke, die v3 geschlossen hat.
     /// </summary>
     internal static class TamperTests
     {
         internal static void Run(TestRunner t, string dir, Func<string, PolyAES> session)
         {
-            t.Section("v3 Manipulationserkennung");
+            t.Section("v4 Manipulationserkennung");
 
             const string pw = "geheim123";
             const string wrongPw = "falschesPasswort";
@@ -110,7 +110,7 @@ namespace crytec.Tests
             // unabhaengigen Zweitimplementierung des 2.0-Formats und zeigen, dass
             // das Entfernen der letzten Bloecke unbemerkt durchgeht. Das ist kein
             // Fehler, sondern der Grund fuer v3 - der Test haelt die Awareness.
-            string v2 = MakeV2File(Path.Combine(dir, "legacy_v2.protected"), Program.MakeData(2048), pw);
+            string v2 = LegacyFormatWriter.MakeV2File(Path.Combine(dir, "legacy_v2.protected"), Program.MakeData(2048), pw);
             t.Equal("v2-Datei wird erkannt", ContainerFormat.V2, PolyAES.DetectFormat(v2));
 
             string v2out = Path.Combine(dir, "v2.out");
@@ -156,48 +156,6 @@ namespace crytec.Tests
                 fs.Position = offsetB; fs.Write(a, 0, count);
                 fs.Flush(true);
             }
-        }
-
-        /// <summary>
-        /// Erzeugt eine Datei im Format v2 (Stand 2.0) - unabhaengig vom Produktivcode
-        /// implementiert, damit der Rueckwaertspfad tatsaechlich geprueft wird.
-        /// </summary>
-        internal static string MakeV2File(string path, byte[] plain, string password)
-        {
-            byte[] magic = { 0x50, 0x43, 0x76, 0x32 }; // PCv2
-            byte[] salt = new byte[32];
-            byte[] iv = new byte[16];
-            using (var rng = RandomNumberGenerator.Create())
-            {
-                rng.GetBytes(salt);
-                rng.GetBytes(iv);
-            }
-
-            byte[] key;
-            using (var kdf = new Rfc2898DeriveBytes(Encoding.UTF8.GetBytes(password), salt, 100000, HashAlgorithmName.SHA256))
-                key = kdf.GetBytes(32);
-
-            byte[] cipher;
-            using (var aes = Aes.Create())
-            {
-                aes.KeySize = 256;
-                aes.BlockSize = 128;
-                aes.Mode = CipherMode.CBC;
-                aes.Padding = PaddingMode.PKCS7;
-                aes.Key = key;
-                aes.IV = iv;
-                using (var enc = aes.CreateEncryptor())
-                    cipher = enc.TransformFinalBlock(plain, 0, plain.Length);
-            }
-
-            using (var fs = new FileStream(path, FileMode.Create, FileAccess.Write))
-            {
-                fs.Write(magic, 0, magic.Length);
-                fs.Write(salt, 0, salt.Length);
-                fs.Write(iv, 0, iv.Length);
-                fs.Write(cipher, 0, cipher.Length);
-            }
-            return path;
         }
     }
 }

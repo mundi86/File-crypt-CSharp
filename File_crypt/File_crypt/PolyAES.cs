@@ -8,6 +8,7 @@ using System;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading;
 
 namespace crytec
 {
@@ -23,8 +24,14 @@ namespace crytec
         /// <summary>AES-256-CBC ohne Authentifizierung, 2.0 (nur noch lesend).</summary>
         V2 = 2,
 
-        /// <summary>AES-256-CBC mit HMAC-SHA256, 3.0 (aktuelles Format).</summary>
-        V3 = 3
+        /// <summary>AES-256-CBC mit HMAC-SHA256, 3.0 (nur noch lesend).</summary>
+        V3 = 3,
+
+        /// <summary>
+        /// AES-256-CBC mit HMAC-SHA256 und getrennten Schluesseln, 4.0
+        /// (aktuelles Format beim Schreiben).
+        /// </summary>
+        V4 = 4
     }
 
     /// <summary>
@@ -32,9 +39,16 @@ namespace crytec
     ///
     /// <para><b>Formate</b> (siehe SECURITY.md):</para>
     /// <list type="bullet">
-    ///   <item><description><b>v3</b> (aktuell, schreiben + lesen):
+    ///   <item><description><b>v4</b> (aktuell, schreiben + lesen):
+    ///   <c>[magic "PCv4"][salt 32][iv 16][ciphertext][hmac-sha256 32]</c><br/>
+    ///   AES-256-CBC, PKCS7, HMAC-SHA256 ueber Header + Ciphertext ("Encrypt-then-MAC").
+    ///   Der Chiffrierschluessel und der Signaturschluessel stammen aus
+    ///   <b>zwei getrennten Haelften</b> des Masterschluessels.</description></item>
+    ///   <item><description><b>v3</b> (3.0, nur lesen):
     ///   <c>[magic "PCv3"][salt 32][iv 16][ciphertext][hmac-sha256 32]</c><br/>
-    ///   AES-256-CBC, PKCS7, HMAC-SHA256 ueber Header + Ciphertext ("Encrypt-then-MAC").</description></item>
+    ///   Gleicher Aufbau wie v4, aber beide Schluessel wurden in 3.0 aus
+    ///   <b>demselben</b> Seed abgeleitet und waren damit byteweise gleich.
+    ///   Wird noch gelesen, damit bereits erzeugte Dateien erreichbar bleiben.</description></item>
     ///   <item><description><b>v2</b> (2.0, nur lesen):
     ///   <c>[magic "PCv2"][salt 32][iv 16][ciphertext]</c><br/>
     ///   AES-256-CBC, PBKDF2-SHA256 mit 100.000 Iterationen. Ohne Integritaetsschutz.</description></item>
@@ -44,19 +58,22 @@ namespace crytec
     ///   Schluessel = <c>ASCII(uplowme(sha256hex(password)))</c>. Ohne Integritaetsschutz.</description></item>
     /// </list>
     ///
-    /// <para><b>Schluesselableitung v3.</b> Aus dem Passwort wird einmal pro Vorgang ein
-    /// 64-Byte-Masterschluessel abgeleitet (PBKDF2-HMAC-SHA256). Pro Datei werden daraus
-    /// zwei|Schluessel per HMAC abgeleitet, getrennt nach Zweck ("enc"/"mac") und mit
-    /// Salt + IV des Containers als Kontext. Das kostet die teure PBKDF2 nur einmal pro
-    /// Lauf und haelt Ordneroperationen mit vielen Dateien schnell.</para>
+    /// <para><b>Schluesselableitung v4.</b> Aus dem Passwort wird einmal pro Vorgang ein
+    /// 64-Byte-Masterschluessel abgeleitet (PBKDF2-HMAC-SHA256). Dessen erste Haelfte
+    /// dient ausschliesslich der Verschluesselung, die zweite ausschliesslich der
+    /// Signatur - ein Byte des einen Schluessels kann also nie Teil des anderen werden.
+    /// Pro Datei werden daraus per HMAC-Schluessel abgeleitet, gebunden an Salt + IV des
+    /// Containers. Das kostet die teure PBKDF2 nur einmal pro Lauf und haelt
+    /// Ordneroperationen mit vielen Dateien schnell.</para>
     ///
     /// <para>Alle Methoden arbeiten streamend, der Speicherbedarf ist unabhaengig von der
-    /// Dateigroesse. Zieldateien werden ueber eine temporaere Datei atomar ersetzt: bei
-    /// einem Abbruch bleibt entweder die alte oder die neue Datei vollstaendig, nie eine
-    /// halb geschriebene.</para>
+    /// Dateigroesse - das gilt auch fuer die Altformate v2 und v1. Zieldateien werden
+    /// ueber eine temporaere Datei atomar ersetzt: bei einem Abbruch bleibt entweder die
+    /// alte oder die neue Datei vollstaendig, nie eine halb geschriebene.</para>
     /// </summary>
     public sealed class PolyAES : IDisposable
     {
+        private static readonly byte[] MagicV4 = { 0x50, 0x43, 0x76, 0x34 }; // "PCv4"
         private static readonly byte[] MagicV3 = { 0x50, 0x43, 0x76, 0x33 }; // "PCv3"
         private static readonly byte[] MagicV2 = { 0x50, 0x43, 0x76, 0x32 }; // "PCv2"
 
@@ -65,11 +82,20 @@ namespace crytec
         private const int IvSize = 16;
         private const int KeySize = 32;
         private const int TagSize = 32;
-        private const int V3HeaderSize = MagicSize + SaltSize + IvSize; // 52
+
+        /// <summary>Magic + Salt + IV.Fuer v2, v3 und v4 identisch.</summary>
+        private const int V4HeaderSize = MagicSize + SaltSize + IvSize; // 52
+
+        /// <summary>Trailing Salt und IV des 2011-Formats, je 32 Byte.</summary>
+        private const int LegacyTrailing = 32;
+
+        /// <summary>Blockgroesse des 2011-Formats: Rijndael mit 256-Bit-Bloecken.</summary>
+        private const int LegacyBlockSize = 32;
+
         private const int CopyBufferSize = 64 * 1024;
 
         /// <summary>
-        /// PBKDF2-Iterationen fuer die Master-Ableitung (v3).
+        /// PBKDF2-Iterationen fuer die Master-Ableitung (v3 und v4).
         ///
         /// <para>Messwerte auf einem gewoehnlichen Desktop (ca. 1,4 s):</para>
         /// <list type="bullet">
@@ -82,6 +108,12 @@ namespace crytec
         /// <para>Die Ableitung laeuft einmal pro Session, nicht pro Datei, deshalb bleiben
         /// Ordner mit vielen Dateien schnell. Wer einen laengeren Wartezeitraum akzeptiert,
         /// kann den Wert hier erhoehen - hoeher ist immer besser.</para>
+        ///
+        /// <para><b>Wichtig:</b> Der Wert darf nur together mit einem neuen
+        /// Container-Format geaendert werden. Wird er fuer ein bestehendes Format
+        /// angehoben, laesst sich kein einzige bereits geschriebene Datei mehr
+        /// oeffnen - die Ableitung ergibt dann einen anderen Schluessel. Aus diesem
+        /// Grund ist er bewusst eine Konstante und keine Option.</para>
         /// </summary>
         public const int Pbkdf2Iterations = 300000;
 
@@ -96,6 +128,20 @@ namespace crytec
         /// Eindeutigkeit innerhalb von privateCrypt.
         /// </summary>
         private static readonly byte[] MasterSalt = Encoding.UTF8.GetBytes("privateCrypt/v3/master-key-salt");
+
+        /// <summary>Label fuer die Chiffrierschluessel-Ableitung (v4).</summary>
+        private static readonly byte[] LabelEnc = Encoding.UTF8.GetBytes("privateCrypt/v4/enc");
+
+        /// <summary>Label fuer die Signaturschluessel-Ableitung (v4).</summary>
+        private static readonly byte[] LabelMac = Encoding.UTF8.GetBytes("privateCrypt/v4/mac");
+
+        /// <summary>
+        /// Domain-Seed der Version 3.0. In 3.0 wurden daraus Chiffrier- und
+        /// Signaturschluessel abgeleitet - beide waren identisch, weil nur ein
+        /// Label benutzt wurde. Wird ausschliesslich zum Lesen von v3-Dateien
+        /// gebraucht; see <see cref="DeriveV3Keys"/>.
+        /// </summary>
+        private static readonly byte[] LegacyV3Domain = { (byte)'e', (byte)'n', (byte)'c' };
 
         private char[] _password;
         private byte[] _masterKey;
@@ -141,6 +187,8 @@ namespace crytec
 
             if (read < MagicSize)
                 return ContainerFormat.Unknown;
+            if (FixedTimeEquals(head, MagicV4))
+                return ContainerFormat.V4;
             if (FixedTimeEquals(head, MagicV3))
                 return ContainerFormat.V3;
             if (FixedTimeEquals(head, MagicV2))
@@ -150,7 +198,7 @@ namespace crytec
 
         /// <summary>
         /// Verschluesselt <paramref name="sourcePath"/> nach <paramref name="targetPath"/>.
-        /// Das Ergebnis hat immer das Format v3.
+        /// Das Ergebnis hat immer das Format v4.
         /// </summary>
         /// <param name="sourcePath">Klartextdatei.</param>
         /// <param name="targetPath">Ziel; wird atomar ersetzt.</param>
@@ -160,6 +208,15 @@ namespace crytec
         /// </param>
         public void EncryptFile(string sourcePath, string targetPath, bool overwrite)
         {
+            EncryptFile(sourcePath, targetPath, overwrite, CancellationToken.None);
+        }
+
+        /// <summary>
+        /// Verschluesselt mit Abbruchmoeglichkeit. Wird der Token ausgeloest, wird die
+        /// temporaere Datei entfernt und das Ziel nicht angefasst.
+        /// </summary>
+        public void EncryptFile(string sourcePath, string targetPath, bool overwrite, CancellationToken token)
+        {
             ThrowIfDisposed();
             if (sourcePath == null) throw new ArgumentNullException("sourcePath");
             if (targetPath == null) throw new ArgumentNullException("targetPath");
@@ -168,6 +225,8 @@ namespace crytec
             if (AreSamePath(sourcePath, targetPath))
                 throw new IOException("Quelldatei und Zieldatei sind identisch: '" + sourcePath + "'.");
 
+            token.ThrowIfCancellationRequested();
+
             string tmp = targetPath + ".pctmp";
             try
             {
@@ -175,11 +234,12 @@ namespace crytec
                 {
                     using (var dst = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None, CopyBufferSize))
                     {
-                        EncryptV3(src, dst);
+                        EncryptV4(src, dst, token);
                         dst.Flush(true);
                     }
                 }
 
+                token.ThrowIfCancellationRequested();
                 CommitFile(tmp, targetPath, overwrite);
                 tmp = null;
             }
@@ -191,7 +251,7 @@ namespace crytec
 
         /// <summary>
         /// Entschluesselt <paramref name="sourcePath"/> nach <paramref name="targetPath"/>.
-        /// Das Eingangsformat (v3, v2 oder Legacy) wird automatisch erkannt.
+        /// Das Eingangsformat (v4, v3, v2 oder Legacy) wird automatisch erkannt.
         /// </summary>
         /// <param name="sourcePath">Verschluesselte Datei.</param>
         /// <param name="targetPath">Ziel; wird atomar ersetzt.</param>
@@ -204,6 +264,15 @@ namespace crytec
         /// </exception>
         public void DecryptFile(string sourcePath, string targetPath, bool overwrite)
         {
+            DecryptFile(sourcePath, targetPath, overwrite, CancellationToken.None);
+        }
+
+        /// <summary>
+        /// Entschluesselt mit Abbruchmoeglichkeit. Wird der Token ausgeloest, wird die
+        /// temporaere Datei entfernt und das Ziel nicht angefasst.
+        /// </summary>
+        public void DecryptFile(string sourcePath, string targetPath, bool overwrite, CancellationToken token)
+        {
             ThrowIfDisposed();
             if (sourcePath == null) throw new ArgumentNullException("sourcePath");
             if (targetPath == null) throw new ArgumentNullException("targetPath");
@@ -211,16 +280,21 @@ namespace crytec
             if (AreSamePath(sourcePath, targetPath))
                 throw new IOException("Quelldatei und Zieldatei sind identisch: '" + sourcePath + "'.");
 
+            token.ThrowIfCancellationRequested();
+
             switch (DetectFormat(sourcePath))
             {
+                case ContainerFormat.V4:
+                    DecryptAuthenticatedFile(sourcePath, targetPath, overwrite, true, token);
+                    break;
                 case ContainerFormat.V3:
-                    DecryptV3File(sourcePath, targetPath, overwrite);
+                    DecryptAuthenticatedFile(sourcePath, targetPath, overwrite, false, token);
                     break;
                 case ContainerFormat.V2:
-                    DecryptV2File(sourcePath, targetPath, overwrite);
+                    DecryptV2File(sourcePath, targetPath, overwrite, token);
                     break;
                 case ContainerFormat.Legacy:
-                    DecryptLegacyFile(sourcePath, targetPath, overwrite);
+                    DecryptLegacyFile(sourcePath, targetPath, overwrite, token);
                     break;
                 default:
                     throw new CryptographicException(
@@ -247,10 +321,10 @@ namespace crytec
         }
 
         // ------------------------------------------------------------------
-        // v3: AES-256-CBC + HMAC-SHA256 (Encrypt-then-MAC)
+        // v4: AES-256-CBC + HMAC-SHA256 mit getrennten Schluesseln (Encrypt-then-MAC)
         // ------------------------------------------------------------------
 
-        private void EncryptV3(Stream source, Stream target)
+        private void EncryptV4(Stream source, Stream target, CancellationToken token)
         {
             byte[] salt = new byte[SaltSize];
             byte[] iv = new byte[IvSize];
@@ -260,14 +334,14 @@ namespace crytec
                 rng.GetBytes(iv);
             }
 
-            byte[] header = BuildHeader(MagicV3, salt, iv);
+            byte[] header = BuildHeader(MagicV4, salt, iv);
             byte[] encKey = null;
             byte[] macKey = null;
             byte[] tag = null;
 
             try
             {
-                DeriveFileKeys(salt, iv, "enc", out encKey, out macKey);
+                DeriveFileKeys(salt, iv, out encKey, out macKey);
 
                 target.Write(header, 0, header.Length);
 
@@ -283,7 +357,7 @@ namespace crytec
                     using (var encryptor = aes.CreateEncryptor())
                     using (var crypto = new CryptoStream(tap, encryptor, CryptoStreamMode.Write))
                     {
-                        CopyStream(source, crypto);
+                        CopyStream(source, crypto, token);
                         crypto.FlushFinalBlock();
                     }
 
@@ -302,7 +376,16 @@ namespace crytec
             }
         }
 
-        private void DecryptV3File(string sourcePath, string targetPath, bool overwrite)
+        /// <summary>
+        /// Entschluesselt v3 oder v4. Beide Formate haben identischen Aufbau und
+        /// unterscheiden sich nur in der Schluesselableitung.
+        /// </summary>
+        /// <param name="useV4Keys">
+        /// <c>true</c> fuer v4 (getrennte Schluessel), <c>false</c> fuer v3
+        /// (reproduziert exakt die Ableitung der Version 3.0).
+        /// </param>
+        private void DecryptAuthenticatedFile(string sourcePath, string targetPath, bool overwrite,
+            bool useV4Keys, CancellationToken token)
         {
             string tmp = targetPath + ".pctmp";
             try
@@ -310,11 +393,12 @@ namespace crytec
                 using (var src = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read, CopyBufferSize))
                 using (var dst = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None, CopyBufferSize))
                 {
-                    byte[] header = ReadExactly(src, V3HeaderSize, sourcePath);
-                    if (!FixedTimeEquals(0, header, 0, MagicV3, MagicSize))
+                    byte[] header = ReadExactly(src, V4HeaderSize, sourcePath);
+                    byte[] expectedMagic = useV4Keys ? MagicV4 : MagicV3;
+                    if (!FixedTimeEquals(0, header, 0, expectedMagic, MagicSize))
                         throw new CryptographicException("Die Datei besitzt kein gültiges privateCrypt-Format.");
 
-                    long cipherLen = src.Length - V3HeaderSize - TagSize;
+                    long cipherLen = src.Length - V4HeaderSize - TagSize;
                     if (cipherLen <= 0 || cipherLen % 16 != 0)
                         throw new CryptographicException(
                             "Die Datei ist beschädigt (unerwartete Dateilänge: " + src.Length + " Bytes).");
@@ -327,19 +411,25 @@ namespace crytec
                     {
                         Buffer.BlockCopy(header, MagicSize, salt, 0, SaltSize);
                         Buffer.BlockCopy(header, MagicSize + SaltSize, iv, 0, IvSize);
-                        DeriveFileKeys(salt, iv, "enc", out encKey, out macKey);
+
+                        if (useV4Keys)
+                            DeriveFileKeys(salt, iv, out encKey, out macKey);
+                        else
+                            DeriveV3Keys(_masterKey, salt, iv, out encKey, out macKey);
+
+                        token.ThrowIfCancellationRequested();
 
                         // Phase 1: Signatur pruefen, BEVOR irgendein Klartext entsteht.
                         VerifyTag(src, header, cipherLen, macKey, sourcePath);
 
                         // Phase 2: entschluesseln.
-                        src.Position = V3HeaderSize;
+                        src.Position = V4HeaderSize;
                         using (var limited = new LengthLimitedStream(src, cipherLen))
                         using (var aes = CreateAes(encKey, iv))
                         using (var decryptor = aes.CreateDecryptor())
                         using (var crypto = new CryptoStream(limited, decryptor, CryptoStreamMode.Read))
                         {
-                            CopyStream(crypto, dst);
+                            CopyStream(crypto, dst, token);
                             dst.Flush(true);
                         }
                     }
@@ -352,6 +442,7 @@ namespace crytec
                     }
                 }
 
+                token.ThrowIfCancellationRequested();
                 CommitFile(tmp, targetPath, overwrite);
                 tmp = null;
             }
@@ -374,7 +465,7 @@ namespace crytec
                 {
                     mac.TransformBlock(header, 0, header.Length, null, 0);
 
-                    src.Position = V3HeaderSize;
+                    src.Position = V4HeaderSize;
                     long remaining = cipherLen;
                     while (remaining > 0)
                     {
@@ -404,6 +495,7 @@ namespace crytec
             finally
             {
                 Array.Clear(storedTag, 0, storedTag.Length);
+                Array.Clear(buffer, 0, buffer.Length);
             }
         }
 
@@ -411,71 +503,73 @@ namespace crytec
         // v2: AES-256-CBC ohne Integritaetsschutz (nur lesend, seit 3.0)
         // ------------------------------------------------------------------
 
-        private void DecryptV2File(string sourcePath, string targetPath, bool overwrite)
+        /// <summary>
+        /// Streamt eine v2-Datei. Bewusst kein <c>ReadAllBytes</c>: die Datei ist
+        /// potenziell beliebig gross, und die EXE ist 32-Bit. Ein 2-GB-Altdokument
+        /// waere mit <c>ReadAllBytes</c> dreifach im Speicher (Datei + Puffer +
+        /// Klartextergebnis) und wuerde an <c>OutOfMemoryException</c> scheitern.
+        /// </summary>
+        private void DecryptV2File(string sourcePath, string targetPath, bool overwrite, CancellationToken token)
         {
-            byte[] data = File.ReadAllBytes(sourcePath);
-            byte[] plain = null;
+            string tmp = targetPath + ".pctmp";
             try
             {
-                plain = DecryptV2(data, sourcePath);
-                WriteAllBytesAtomic(plain, targetPath, overwrite);
+                using (var src = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read, CopyBufferSize))
+                using (var dst = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None, CopyBufferSize))
+                {
+                    byte[] header = ReadExactly(src, V4HeaderSize, sourcePath);
+                    if (!FixedTimeEquals(0, header, 0, MagicV2, MagicSize))
+                        throw new CryptographicException("Die Datei besitzt kein gültiges privateCrypt-Format.");
+
+                    long cipherLen = src.Length - V4HeaderSize;
+                    if (cipherLen <= 0 || cipherLen % 16 != 0)
+                        throw new CryptographicException("Die Datei ist beschädigt (unerwartete Blockgröße).");
+
+                    byte[] salt = new byte[SaltSize];
+                    byte[] iv = new byte[IvSize];
+                    byte[] key = null;
+                    try
+                    {
+                        Buffer.BlockCopy(header, MagicSize, salt, 0, SaltSize);
+                        Buffer.BlockCopy(header, MagicSize + SaltSize, iv, 0, IvSize);
+
+                        byte[] pw = ToUtf8(_password);
+                        try
+                        {
+                            using (var kdf = new Rfc2898DeriveBytes(pw, salt, Pbkdf2IterationsV2, HashAlgorithmName.SHA256))
+                                key = kdf.GetBytes(KeySize);
+                        }
+                        finally
+                        {
+                            Array.Clear(pw, 0, pw.Length);
+                        }
+
+                        token.ThrowIfCancellationRequested();
+
+                        // Ab hier wird nur noch gestreamt. Ein falsches Passwort faellt
+                        // ueber das Padding auf - CryptoStream meldet es beim Lesen.
+                        src.Position = V4HeaderSize;
+                        using (var limited = new LengthLimitedStream(src, cipherLen))
+                        {
+                            DecryptCbcTo(limited, dst, key, iv, token);
+                        }
+                        dst.Flush(true);
+                    }
+                    finally
+                    {
+                        Array.Clear(salt, 0, salt.Length);
+                        Array.Clear(iv, 0, iv.Length);
+                        if (key != null) Array.Clear(key, 0, key.Length);
+                    }
+                }
+
+                token.ThrowIfCancellationRequested();
+                CommitFile(tmp, targetPath, overwrite);
+                tmp = null;
             }
             finally
             {
-                Array.Clear(data, 0, data.Length);
-                if (plain != null) Array.Clear(plain, 0, plain.Length);
-            }
-        }
-
-        private byte[] DecryptV2(byte[] data, string sourcePath)
-        {
-            if (data.Length < V3HeaderSize + 16)
-                throw new CryptographicException(
-                    "Die Datei ist beschädigt (nur " + data.Length + " Bytes).");
-
-            byte[] salt = new byte[SaltSize];
-            byte[] iv = new byte[IvSize];
-            byte[] key = null;
-            try
-            {
-                Buffer.BlockCopy(data, MagicSize, salt, 0, SaltSize);
-                Buffer.BlockCopy(data, MagicSize + SaltSize, iv, 0, IvSize);
-
-                int cipherLen = data.Length - V3HeaderSize;
-                if (cipherLen % 16 != 0)
-                    throw new CryptographicException("Die Datei ist beschädigt (unerwartete Blockgröße).");
-
-                byte[] cipher = new byte[cipherLen];
-                Buffer.BlockCopy(data, V3HeaderSize, cipher, 0, cipherLen);
-
-                byte[] pw = ToUtf8(_password);
-                try
-                {
-                    using (var kdf = new Rfc2898DeriveBytes(pw, salt, Pbkdf2IterationsV2, HashAlgorithmName.SHA256))
-                        key = kdf.GetBytes(KeySize);
-                }
-                finally
-                {
-                    Array.Clear(pw, 0, pw.Length);
-                }
-
-                try
-                {
-                    using (var aes = CreateAes(key, iv))
-                    using (var decryptor = aes.CreateDecryptor())
-                        return decryptor.TransformFinalBlock(cipher, 0, cipher.Length);
-                }
-                catch (CryptographicException)
-                {
-                    throw new CryptographicException(
-                        "Entschlüsselung fehlgeschlagen: Passwort falsch oder Datei beschädigt.");
-                }
-            }
-            finally
-            {
-                Array.Clear(salt, 0, salt.Length);
-                Array.Clear(iv, 0, iv.Length);
-                if (key != null) Array.Clear(key, 0, key.Length);
+                if (tmp != null) SafeDelete(tmp);
             }
         }
 
@@ -483,82 +577,131 @@ namespace crytec
         // v1 Legacy: Rijndael-256 (nur lesend, seit 2.0)
         // ------------------------------------------------------------------
 
-        private void DecryptLegacyFile(string sourcePath, string targetPath, bool overwrite)
+        /// <summary>
+        /// Streamt eine Datei aus dem Original von 2011. Aufbau:
+        /// <c>[ciphertext][salt 32][iv 32]</c> - Salt und IV stehen hinter dem
+        /// Ciphertext und werden deshalb per Sprung gelesen, statt die ganze Datei
+        /// zu laden.
+        /// </summary>
+        private void DecryptLegacyFile(string sourcePath, string targetPath, bool overwrite, CancellationToken token)
         {
-            byte[] data = File.ReadAllBytes(sourcePath);
-            byte[] plain = null;
+            string tmp = targetPath + ".pctmp";
             try
             {
-                plain = DecryptLegacy(data);
-                WriteAllBytesAtomic(plain, targetPath, overwrite);
+                using (var src = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read, CopyBufferSize))
+                using (var dst = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None, CopyBufferSize))
+                {
+                    long total = src.Length;
+                    if (total < (2 * LegacyTrailing) + LegacyBlockSize)
+                        throw new CryptographicException(
+                            "Die Datei ist beschädigt (nur " + total + " Bytes, Legacy-Format erwartet mindestens 96).");
+
+                    long cipherLen = total - 2L * LegacyTrailing;
+                    if (cipherLen % LegacyBlockSize != 0)
+                        throw new CryptographicException("Die Datei ist beschädigt (unerwartete Blockgröße im Legacy-Format).");
+
+                    byte[] salt = new byte[LegacyTrailing];
+                    byte[] iv = new byte[LegacyTrailing];
+                    byte[] derivedKey = null;
+
+                    try
+                    {
+                        // Salt und IV aus dem hinteren Dateibereich lesen. Das geht nur,
+                        // weil src seekbar ist - ein Stream von der Platte ist es.
+                        src.Position = cipherLen;
+                        ReadFully(src, salt, 0, LegacyTrailing);
+                        src.Position = total - LegacyTrailing;
+                        ReadFully(src, iv, 0, LegacyTrailing);
+
+                        byte[] key = Encoding.ASCII.GetBytes(UplowmeLegacy(GetHashSha256Legacy(ToLegacyString(_password))));
+                        try
+                        {
+                            using (var kdf = new Rfc2898DeriveBytes(key, salt, Pbkdf2IterationsLegacy))
+                                derivedKey = kdf.GetBytes(KeySize);
+
+                            token.ThrowIfCancellationRequested();
+
+                            src.Position = 0;
+                            using (var limited = new LengthLimitedStream(src, cipherLen))
+                            {
+                                DecryptLegacyCbcTo(limited, dst, derivedKey, iv, token);
+                            }
+                            dst.Flush(true);
+                        }
+                        finally
+                        {
+                            Array.Clear(key, 0, key.Length);
+                        }
+                    }
+                    finally
+                    {
+                        Array.Clear(salt, 0, salt.Length);
+                        Array.Clear(iv, 0, iv.Length);
+                        if (derivedKey != null) Array.Clear(derivedKey, 0, derivedKey.Length);
+                    }
+                }
+
+                token.ThrowIfCancellationRequested();
+                CommitFile(tmp, targetPath, overwrite);
+                tmp = null;
             }
             finally
             {
-                Array.Clear(data, 0, data.Length);
-                if (plain != null) Array.Clear(plain, 0, plain.Length);
+                if (tmp != null) SafeDelete(tmp);
+            }
+        }
+
+        /// <summary>
+        /// Entschluesselt einen AES-CBC-Stream in <paramref name="target"/> und
+        /// uebersetzt Fehler in eine einheitliche Meldung.
+        /// </summary>
+        private static void DecryptCbcTo(Stream source, Stream target, byte[] key, byte[] iv,
+            CancellationToken token)
+        {
+            try
+            {
+                using (var aes = CreateAes(key, iv))
+                using (var decryptor = aes.CreateDecryptor())
+                using (var crypto = new CryptoStream(source, decryptor, CryptoStreamMode.Read))
+                {
+                    CopyStream(crypto, target, token);
+                }
+            }
+            catch (CryptographicException)
+            {
+                // Fast immer ein falsches Passwort: bei AES-CBC faellt die
+                // Entschluesselung ueber das Padding auf. Die Meldung bleibt
+                // absichtlich zweideutig.
+                throw new CryptographicException(
+                    "Entschlüsselung fehlgeschlagen: Passwort falsch oder Datei beschädigt.");
             }
         }
 
 #pragma warning disable CS0618 // RijndaelManaged ist in .NET 6+ obsolet, auf .NET Framework 4.8 aber noetig
-        // Legacy-Entschluesselung - exakt die urspruengliche Logik, damit Dateien aus
-        // der 1.0-Version weiterhin geoeffnet werden koennen. Nur noch lesend.
-        private byte[] DecryptLegacy(byte[] cipherText)
+        /// <summary>Entschluesselt den 2011-Blockcipher (Rijndael-256) in einen Stream.</summary>
+        private static void DecryptLegacyCbcTo(Stream source, Stream target, byte[] key, byte[] iv,
+            CancellationToken token)
         {
-            const int Trailing = 32; // Salt und IV stehen hinter dem Ciphertext
-            const int LegacyBlockSize = 32; // Rijndael mit BlockSize 256
-
-            if (cipherText.Length < (2 * Trailing) + LegacyBlockSize)
-                throw new CryptographicException(
-                    "Die Datei ist beschädigt (nur " + cipherText.Length + " Bytes, Legacy-Format erwartet mindestens 96).");
-
-            int withSaltLen = cipherText.Length - Trailing;
-            int actualLen = withSaltLen - Trailing;
-            if (actualLen % LegacyBlockSize != 0)
-                throw new CryptographicException("Die Datei ist beschädigt (unerwartete Blockgröße im Legacy-Format).");
-
-            byte[] iv = new byte[Trailing];
-            Buffer.BlockCopy(cipherText, withSaltLen, iv, 0, Trailing);
-
-            byte[] salt = new byte[Trailing];
-            Buffer.BlockCopy(cipherText, actualLen, salt, 0, Trailing);
-
-            byte[] actualCipher = new byte[actualLen];
-            Buffer.BlockCopy(cipherText, 0, actualCipher, 0, actualLen);
-
-            byte[] key = Encoding.ASCII.GetBytes(UplowmeLegacy(GetHashSha256Legacy(ToString(_password))));
-            byte[] derivedKey = null;
-
             try
             {
-                using (var kdf = new Rfc2898DeriveBytes(key, salt, Pbkdf2IterationsLegacy))
-                    derivedKey = kdf.GetBytes(32);
-
                 using (var algo = new RijndaelManaged())
                 {
                     algo.Mode = CipherMode.CBC;
                     algo.BlockSize = 256;
-                    algo.Key = derivedKey;
+                    algo.Key = key;
                     algo.IV = iv;
 
-                    try
+                    using (var decryptor = algo.CreateDecryptor())
+                    using (var crypto = new CryptoStream(source, decryptor, CryptoStreamMode.Read))
                     {
-                        using (var decryptor = algo.CreateDecryptor())
-                            return decryptor.TransformFinalBlock(actualCipher, 0, actualCipher.Length);
-                    }
-                    catch (CryptographicException)
-                    {
-                        throw new CryptographicException(
-                            "Entschlüsselung fehlgeschlagen: Passwort falsch oder Datei beschädigt.");
+                        CopyStream(crypto, target, token);
                     }
                 }
             }
-            finally
+            catch (CryptographicException)
             {
-                if (derivedKey != null) Array.Clear(derivedKey, 0, derivedKey.Length);
-                Array.Clear(key, 0, key.Length);
-                Array.Clear(salt, 0, salt.Length);
-                Array.Clear(iv, 0, iv.Length);
-                Array.Clear(actualCipher, 0, actualCipher.Length);
+                throw new CryptographicException(
+                    "Entschlüsselung fehlgeschlagen: Passwort falsch oder Datei beschädigt.");
             }
         }
 #pragma warning restore CS0618
@@ -568,21 +711,75 @@ namespace crytec
         // ------------------------------------------------------------------
 
         /// <summary>
-        /// Leitet Dateischluessel aus dem Master-Schluessel ab. Die Domänen-Trennung
-        /// ("enc" / "mac") stellt sicher, dass derselbe Bytes-Bereich nie fuer beides
-        /// verwendet wird; Salt und IV binden den Schluessel an genau diese Datei.
+        /// Leitet die Dateischluessel fuer Format v4 ab.
+        ///
+        /// <para><b>Der Kern des Formats.</b> Der Masterschluessel ist 64 Byte lang und
+        /// wird in zwei Haelften geteilt: die erste speist ausschliesslich
+        /// <c>HMAC(encMaster, "…/enc" ‖ salt ‖ iv)</c>, die zweite ausschliesslich
+        /// <c>HMAC(macMaster, "…/mac" ‖ salt ‖ iv)</c>. Chiffrier- und
+        /// Signaturschluessel koennen dadurch nie identisch sein - das war in Version
+        /// 3.0 der Fall und ist der Grund fuer das neue Format.</para>
+        ///
+        /// <para>Salt und IV binden den Schluessel zusaetzlich an genau diese Datei:
+        /// derselbe Klartext unter gleichem Passwort ergibt trotzdem jedes Mal einen
+        /// anderen Schluessel und damit eine andere Chiffre.</para>
         /// </summary>
-        private void DeriveFileKeys(byte[] salt, byte[] iv, string domain, out byte[] encKey, out byte[] macKey)
+        internal void DeriveFileKeys(byte[] salt, byte[] iv, out byte[] encKey, out byte[] macKey)
         {
-            byte[] seed = new byte[domain.Length + SaltSize + IvSize];
-            for (int i = 0; i < domain.Length; i++) seed[i] = (byte)domain[i];
-            Buffer.BlockCopy(salt, 0, seed, domain.Length, SaltSize);
-            Buffer.BlockCopy(iv, 0, seed, domain.Length + SaltSize, IvSize);
-
+            byte[] encMaster = null;
+            byte[] macMaster = null;
             try
             {
-                encKey = ComputeMasterHmac(seed);
-                macKey = ComputeMasterHmac(seed);
+                SplitMasterKey(out encMaster, out macMaster);
+
+                byte[] encSeed = BuildSeed(LabelEnc, salt, iv);
+                byte[] macSeed = BuildSeed(LabelMac, salt, iv);
+                try
+                {
+                    using (var encHmac = new HMACSHA256(encMaster))
+                        encKey = encHmac.ComputeHash(encSeed);
+                    using (var macHmac = new HMACSHA256(macMaster))
+                        macKey = macHmac.ComputeHash(macSeed);
+                }
+                finally
+                {
+                    Array.Clear(encSeed, 0, encSeed.Length);
+                    Array.Clear(macSeed, 0, macSeed.Length);
+                }
+            }
+            finally
+            {
+                Array.Clear(encMaster, 0, encMaster.Length);
+                Array.Clear(macMaster, 0, macMaster.Length);
+            }
+        }
+
+        /// <summary>
+        /// Reproduziert die Schluesselableitung der Version 3.0 fuer das Lesen von
+        /// v3-Dateien.
+        ///
+        /// <para>3.0 hat <b>beide</b> Schluessel aus demselben Seed abgeleitet und
+        /// damit denselben 32-Byte-Schluessel als Chiffrier- und als Signaturschluessel
+        /// benutzt. Das wird hier unveraendert nachgebildet - sonst waeren alle mit 3.0
+        /// erzeugten Dateien nicht mehr lesbar. Neu geschrieben wird ausschliesslich v4
+        /// ueber <see cref="DeriveFileKeys"/>.</para>
+        /// </summary>
+        internal static void DeriveV3Keys(byte[] masterKey, byte[] salt, byte[] iv,
+            out byte[] encKey, out byte[] macKey)
+        {
+            if (masterKey == null) throw new ArgumentNullException("masterKey");
+            if (masterKey.Length != 2 * KeySize)
+                throw new ArgumentException("Masterschlüssel muss 64 Byte lang sein.", "masterKey");
+
+            byte[] seed = BuildSeed(LegacyV3Domain, salt, iv);
+            try
+            {
+                // In 3.0 wurde der komplette 64-Byte-Masterschluessel als HMAC-Schluessel
+                // benutzt - nicht eine Haelfte.
+                using (var hmac = new HMACSHA256(masterKey))
+                    encKey = hmac.ComputeHash(seed);
+
+                macKey = (byte[])encKey.Clone();
             }
             finally
             {
@@ -590,10 +787,31 @@ namespace crytec
             }
         }
 
-        private byte[] ComputeMasterHmac(byte[] seed)
+        /// <summary>Teilt den Masterschluessel in eine Chiffrier- und eine Signaturhaelfte.</summary>
+        private void SplitMasterKey(out byte[] encMaster, out byte[] macMaster)
         {
-            using (var hmac = new HMACSHA256(_masterKey))
-                return hmac.ComputeHash(seed);
+            if (_masterKey == null || _masterKey.Length != 2 * KeySize)
+                throw new ObjectDisposedException("PolyAES");
+
+            encMaster = new byte[KeySize];
+            macMaster = new byte[KeySize];
+            Buffer.BlockCopy(_masterKey, 0, encMaster, 0, KeySize);
+            Buffer.BlockCopy(_masterKey, KeySize, macMaster, 0, KeySize);
+        }
+
+        /// <summary>
+        /// Baut den Ableitungs-Seed: Label, danach Salt und IV des Containers.
+        /// Durch die feste Reihenfolge ist die Konkatenation eindeutig - Label, Salt
+        /// und IV haben zwar feste Laengen, die explizite Reihenfolge macht es trotzdem
+        /// unabhaengig von zukuenftigen Aenderungen.
+        /// </summary>
+        private static byte[] BuildSeed(byte[] label, byte[] salt, byte[] iv)
+        {
+            byte[] seed = new byte[label.Length + SaltSize + IvSize];
+            Buffer.BlockCopy(label, 0, seed, 0, label.Length);
+            Buffer.BlockCopy(salt, 0, seed, label.Length, SaltSize);
+            Buffer.BlockCopy(iv, 0, seed, label.Length + SaltSize, IvSize);
+            return seed;
         }
 
         // ------------------------------------------------------------------
@@ -625,14 +843,19 @@ namespace crytec
         /// Kopiert mit festem Puffer. Der Puffer wird anschliessend geleert, weil er beim
         /// Entschluesseln Klartext enthaelt.
         /// </summary>
-        private static void CopyStream(Stream src, Stream dst)
+        private static void CopyStream(Stream src, Stream dst, CancellationToken token)
         {
             byte[] buffer = new byte[CopyBufferSize];
             try
             {
                 int read;
                 while ((read = src.Read(buffer, 0, buffer.Length)) > 0)
+                {
+                    // In grossen Bloecken pruefen, damit ein Abbruch nicht erst nach
+                    // dem Ende einer 64-KiB-Kongruenz wirkt.
+                    token.ThrowIfCancellationRequested();
                     dst.Write(buffer, 0, read);
+                }
             }
             finally
             {
@@ -655,15 +878,33 @@ namespace crytec
         private static byte[] ReadExactly(Stream stream, int count, string sourcePath)
         {
             byte[] buffer = new byte[count];
-            if (ReadFully(stream, buffer, 0, count) != count)
-                throw new CryptographicException(
-                    "Die Datei ist beschädigt (Header unvollständig): '" + sourcePath + "'.");
+            try
+            {
+                if (ReadFully(stream, buffer, 0, count) != count)
+                    throw new CryptographicException(
+                        "Die Datei ist beschädigt (Header unvollständig): '" + sourcePath + "'.");
+            }
+            catch
+            {
+                Array.Clear(buffer, 0, buffer.Length);
+                throw;
+            }
             return buffer;
         }
 
         /// <summary>
-        /// Ersetzt das Ziel atomar: erst wird <paramref name="tmp"/> vollstaendig geschrieben,
-        /// dann das alte Ziel entfernt und die temporaere Datei umbenannt.
+        /// Ersetzt das Ziel atomar.
+        ///
+        /// <para><b>Warum nicht einfach Delete und Move:</b> zwischen beiden Aufrufen
+        /// gibt es ein Fenster, in dem die Zieldatei nicht existiert. Stuerzt der
+        /// Rechner dort ab, ist der Inhalt weg - bei einer Datei, die gerade
+        /// entschluesselt wurde, ein Totalverlust. <see cref="File.Replace"/> tauscht
+        /// dagegen auf Dateisystemebene aus: die alte Datei bleibt sichtbar, bis die
+        /// neue vollstaendig an ihrem Platz steht.</para>
+        ///
+        /// <para>Falls Replace nicht unterstuetzt wird (exotische Netzwerk- oder
+        /// FAT-Volumes), bleibt der bisherige Weg als Rueckfall - die Zieldatei geht
+        /// dabei nicht verloren, es entfaellt nur die Unterbrechungsfreiheit.</para>
         /// </summary>
         private static void CommitFile(string tmp, string targetPath, bool overwrite)
         {
@@ -671,29 +912,31 @@ namespace crytec
             {
                 if (!overwrite)
                     throw new IOException("Die Zieldatei existiert bereits und wurde nicht überschrieben: '" + targetPath + "'.");
+
+                try
+                {
+                    // backupFileName = null: die alte Datei soll nicht behalten werden.
+                    File.Replace(tmp, targetPath, null);
+                    return;
+                }
+                catch (PlatformNotSupportedException)
+                {
+                    // Auf dem Dateisystem nicht verfuegbar - unten folgt der Rueckfall.
+                }
+                catch (NotSupportedException)
+                {
+                }
+                catch (IOException)
+                {
+                    // Manche Netzlaufwerke werfen das auch. Ein Fehler, der wirklich
+                    // bedeutet "Ziel ist weg", faellt durch und wird weiter oben
+                    // sichtbar, statt hier still zu werden.
+                }
+
                 File.Delete(targetPath);
             }
 
             File.Move(tmp, targetPath);
-        }
-
-        private static void WriteAllBytesAtomic(byte[] data, string targetPath, bool overwrite)
-        {
-            string tmp = targetPath + ".pctmp";
-            try
-            {
-                using (var fs = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None, CopyBufferSize))
-                {
-                    fs.Write(data, 0, data.Length);
-                    fs.Flush(true);
-                }
-                CommitFile(tmp, targetPath, overwrite);
-                tmp = null;
-            }
-            finally
-            {
-                if (tmp != null) SafeDelete(tmp);
-            }
         }
 
         private static void SafeDelete(string path)
@@ -712,7 +955,7 @@ namespace crytec
             return new UTF8Encoding(false).GetBytes(value);
         }
 
-        private static string ToString(char[] value)
+        private static string ToLegacyString(char[] value)
         {
             // Nur fuer das Legacy-Format, das zwingend einen String braucht
             // (Encoding.ASCII.GetBytes). Wird nicht zwischengespeichert.

@@ -20,7 +20,7 @@ namespace crytec
     internal static class cConfig
     {
         private const string AppName = "privateCrypt";
-        private const string AppVersion = "3.0";
+        private const string AppVersion = "4.0";
         private const string AppPublisher = "mundi86";
 
         private const string UninstallRegKey =

@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Security.Cryptography;
+using System.Threading;
 
 namespace crytec.Tests
 {
@@ -8,7 +9,7 @@ namespace crytec.Tests
     {
         internal static void Run(TestRunner t, string dir, Func<string, PolyAES> session)
         {
-            t.Section("v3 Round-Trip und Container-Format");
+            t.Section("v4 Round-Trip und Container-Format");
 
             const string pw = "geheim123";
 
@@ -37,11 +38,74 @@ namespace crytec.Tests
                         new FileInfo(enc).Length == expected,
                         "erwartet " + expected + ", war " + new FileInfo(enc).Length);
 
-                t.Check("Magic == PCv3 (" + size + ")",
-                        Program.Hex(Program.ReadHead(enc, 4)) == "50437633");
+                t.Check("Magic == PCv4 (" + size + ")",
+                        Program.Hex(Program.ReadHead(enc, 4)) == "50437634");
             }
 
-            t.Section("v3 Randfaelle");
+            t.Section("v4 Schluesseltrennung (der Grund fuer das neue Format)");
+
+            // Der Kern der Korrektur: in Version 3.0 wurden Chiffrier- und
+            // Signaturschluessel aus demselben Seed abgeleitet und waren damit
+            // byteweise gleich. Wenn dieser Test fehlschlaegt, ist wieder ein
+            // einziger Schluessel fuer beides im Spiel.
+            byte[] salt = new byte[32];
+            byte[] iv = new byte[16];
+            using (var rng = RandomNumberGenerator.Create())
+            {
+                rng.GetBytes(salt);
+                rng.GetBytes(iv);
+            }
+
+            byte[] encKey, macKey;
+            session(pw).DeriveFileKeys(salt, iv, out encKey, out macKey);
+
+            t.Check("Chiffrier- und Signaturschluessel sind verschieden",
+                    !Program.SameBytes(encKey, macKey),
+                    "beide waren " + Program.Hex(encKey));
+            t.Check("Schluessel haben je 32 Byte",
+                    encKey.Length == 32 && macKey.Length == 32);
+            t.Check("Schluessel sind nicht leer",
+                    !AllZero(encKey) && !AllZero(macKey));
+
+            // Und sie duerfen sich auch nicht nur in einem Bit unterscheiden -
+            // das waere ein getarnter Gleichheitsfall.
+            int differing = 0;
+            for (int i = 0; i < 32; i++) if (encKey[i] != macKey[i]) differing++;
+            t.Check("Schluessel unterscheiden sich in vielen Bytes", differing >= 16,
+                    "nur " + differing + " von 32 Bytes unterschiedlich");
+
+            // Gleiche Eingabe -> gleiche Schluessel. Andernfalls waere die
+            // Entschluesselung nicht reproduzierbar.
+            byte[] encKey2, macKey2;
+            session(pw).DeriveFileKeys(salt, iv, out encKey2, out macKey2);
+            t.Check("Ableitung ist reproduzierbar",
+                    Program.SameBytes(encKey, encKey2) && Program.SameBytes(macKey, macKey2));
+
+            // Anderer Salt -> anderer Schluessel. Bindung an die Datei.
+            salt[0] ^= 0xFF;
+            byte[] encKey3, macKey3;
+            session(pw).DeriveFileKeys(salt, iv, out encKey3, out macKey3);
+            t.Check("Anderer Salt ergibt anderen Schluessel",
+                    !Program.SameBytes(encKey, encKey3));
+
+            // Der Beweis, dass die Trennung wirkt: eine v3-Datei laesst sich mit
+            // den v4-Schluesseln NICHT entschluesseln. Wuerde der Leseweg von v3
+            // faelschlich die v4-Ableitung benutzen, waere eine Datei aus 3.0
+            // nicht mehr erreichbar.
+            byte[] v3Enc, v3Mac;
+            byte[] v3Salt = new byte[32];
+            byte[] v3Iv = new byte[16];
+            using (var rng2 = RandomNumberGenerator.Create())
+            {
+                rng2.GetBytes(v3Salt);
+                rng2.GetBytes(v3Iv);
+            }
+            PolyAES.DeriveV3Keys(MasterKeyOf(session(pw)), v3Salt, v3Iv, out v3Enc, out v3Mac);
+            t.Check("v3 reproduziert den gemeinsamen Schluessel (Fehler von 3.0)",
+                    Program.SameBytes(v3Enc, v3Mac),
+                    "eine korrigierte Ableitung wuerde hier abweichen");
+
+            t.Section("v4 Randfaelle");
 
             // Leeres Passwort wird abgelehnt
             t.CheckThrows<ArgumentException>("leeres Passwort wird abgelehnt",
@@ -67,7 +131,7 @@ namespace crytec.Tests
                         Slice(File.ReadAllBytes(b + ".protected"), 4, 32)));
 
             // Format-Erkennung
-            t.Equal("DetectFormat erkennt v3", ContainerFormat.V3, PolyAES.DetectFormat(a + ".protected"));
+            t.Equal("DetectFormat erkennt v4", ContainerFormat.V4, PolyAES.DetectFormat(a + ".protected"));
             t.Equal("DetectFormat erkennt Unknown bei leerer Datei", ContainerFormat.Unknown, PolyAES.DetectFormat(WriteEmpty(Path.Combine(dir, "leer.bin"))));
 
             // Ueberschreiben-Schutz
@@ -101,6 +165,70 @@ namespace crytec.Tests
             single.Dispose();
             t.CheckThrows<ObjectDisposedException>("Zugriff nach Dispose", () => single.EncryptFile(a, a + ".x", true));
             t.Check("Dispose zweimal ist harmlos", DisposeTwice(single));
+
+            t.Section("Abbruch (CancellationToken)");
+
+            // Ein abgebrochener Vorgang darf das Ziel nicht veraendern und keine
+            // temporaeren Dateien hinterlassen.
+            string cancelTarget = Path.Combine(dir, "cancel.protected");
+            string cancelSrc = Path.Combine(dir, "cancel.bin");
+            File.WriteAllBytes(cancelSrc, Program.MakeData(200000));
+
+            byte[] beforeCancel;
+            using (var cts = new CancellationTokenSource())
+            {
+                // Sofort abbrechen: der Vorgang muss noch gar nichts anlegen.
+                cts.Cancel();
+                bool threw = false;
+                try { session(pw).EncryptFile(cancelSrc, cancelTarget, true, cts.Token); }
+                catch (OperationCanceledException) { threw = true; }
+                t.Check("abgebrochene Verschluesselung meldet Abbruch", threw);
+            }
+            t.Check("kein Ziel bei Abbruch vor Beginn", !File.Exists(cancelTarget));
+            t.Check("keine .pctmp-Reste bei Abbruch",
+                    Directory.GetFiles(dir, "cancel*.pctmp").Length == 0);
+
+            // Ein bestehendes Ziel bleibt bei Abbruch unangetastet.
+            session(pw).EncryptFile(cancelSrc, cancelTarget, false);
+            beforeCancel = File.ReadAllBytes(cancelTarget);
+            using (var cts = new CancellationTokenSource())
+            {
+                cts.Cancel();
+                try { session(pw).EncryptFile(cancelSrc, cancelTarget, true, cts.Token); }
+                catch (OperationCanceledException) { }
+            }
+            t.Check("bestehendes Ziel bleibt bei Abbruch unveraendert",
+                    Program.SameBytes(beforeCancel, File.ReadAllBytes(cancelTarget)));
+
+            // Und dasselbe fuer die Entschluesselung.
+            string cancelPlain = Path.Combine(dir, "cancel.out");
+            File.WriteAllBytes(cancelPlain, Program.MakeData(64));
+            byte[] plainBefore = File.ReadAllBytes(cancelPlain);
+            using (var cts = new CancellationTokenSource())
+            {
+                cts.Cancel();
+                try { session(pw).DecryptFile(cancelTarget, cancelPlain, true, cts.Token); }
+                catch (OperationCanceledException) { }
+            }
+            t.Check("bestehendes Ziel bleibt bei abgebrochener Entschluesselung unveraendert",
+                    Program.SameBytes(plainBefore, File.ReadAllBytes(cancelPlain)));
+        }
+
+        private static bool AllZero(byte[] data)
+        {
+            foreach (byte b in data) if (b != 0) return false;
+            return true;
+        }
+
+        /// <summary>
+        /// Liest den Masterschluessel aus einer Session. Nur fuer den Test, der
+        /// die v3-Ableitung unabhaengig nachrechnen will.
+        /// </summary>
+        private static byte[] MasterKeyOf(PolyAES p)
+        {
+            var field = typeof(PolyAES).GetField("_masterKey",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            return (byte[])field.GetValue(p);
         }
 
         private static string WriteEmpty(string path)

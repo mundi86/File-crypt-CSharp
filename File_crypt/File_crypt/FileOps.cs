@@ -73,6 +73,15 @@ namespace crytec
 
             // Ein einzelnes unlesbares Verzeichnis darf den ganzen Lauf nicht
             // abbrechen - typisch: geschuetzte Systemordner unter %LocalAppData%.
+            //
+            // Abgefangen werden alle drei Exception-Typen, die die BCL hier nennen
+            // kann: UnauthorizedAccessException (Rechte), DirectoryNotFoundException
+            // (wurde waehrend des Laufs geloescht) und IOException (z. B. ein
+            // unterbrechbares Volume, ein Netzlaufwerk mit Zeitueberschreitung
+            // oder ein Pfad, der zum Zeitpunkt des Aufrufs zu lang war).
+            // Ohne den IOException-Fall bricht ein einziger solcher Ordner den
+            // kompletten Lauf ab - bei einem Lauf ueber den Benutzerordner kann
+            // das jederzeit ein hängendes Netzlaufwerk ausloesen.
             string[] files;
             try
             {
@@ -83,6 +92,10 @@ namespace crytec
                 files = new string[0];
             }
             catch (DirectoryNotFoundException)
+            {
+                files = new string[0];
+            }
+            catch (IOException)
             {
                 files = new string[0];
             }
@@ -103,6 +116,10 @@ namespace crytec
                 return;
             }
             catch (DirectoryNotFoundException)
+            {
+                return;
+            }
+            catch (IOException)
             {
                 return;
             }

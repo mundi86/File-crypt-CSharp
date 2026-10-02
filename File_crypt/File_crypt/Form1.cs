@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -35,10 +36,17 @@ namespace crytec
         private bool _isDirectory;
         private bool _encryptMode;       // true = verschluesseln, false = entschluesseln
         private bool _ready;             // Argumente geprueft, Operation erlaubt
+        private bool _passwordRevealed;
 
         private CancellationTokenSource _cts;
         private bool _busy;
-        private bool _isDark;
+
+        /// <summary>
+        /// Zeigt den vollen Dateinamen an, wenn die Beschriftung ihn kappt.
+        /// Ohne das ist bei langen Namen nicht erkennbar, welche Datei gerade
+        /// offen ist.
+        /// </summary>
+        private readonly ToolTip toolTip = new ToolTip();
 
         // DWM P/Invoke fuer dunkle Titelleiste und abgerundete Ecken (Windows 11)
         [DllImport("dwmapi.dll")]
@@ -52,10 +60,65 @@ namespace crytec
         {
             InitializeComponent();
 
+            // Theme vor dem ersten Zeichnen laden - die Karten und Felder
+            // beziehen ihre Farben daraus.
+            Theme.Apply();
+
+            // Autoscale an die Theme-Schrift koppeln.
+            //
+            // AutoScaleMode.Font vergleicht die Masse der eingestellten Schrift
+            // mit AutoScaleDimensions und skaliert das gesamte Layout um das
+            // Verhaeltnis. Die festen Werte 7 x 15 im Designer gehoeren zu
+            // Segoe UI 9 pt. Wird stattdessen eine andere Familie oder Groesse
+            // gesetzt, entsteht ein Faktor != 1, der das Layout verschiebt - im
+            // ungünstigsten Fall so, dass der Knopf aus der Karte laeuft.
+            //
+            // Deshalb wird AutoScaleDimensions aus genau der Schrift berechnet,
+            // die das Fenster auch verwendet. Der Faktor ist damit 1, und die
+            // Hochskalierung uebernimmt wie gewohnt die DPI.
+            this.Font = Theme.FontBody;
+            this.AutoScaleDimensions = MeasureFontBaseline();
+
+            ApplyThemeToControls();
+
             // Symbol direkt aus der ausgefuehrten Datei, damit Titelleiste und
             // Taskleiste es anzeigen.
             try { this.Icon = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath); }
             catch { }
+        }
+
+        /// <summary>
+        /// Masse der Theme-Schrift als AutoScaleDimensions.
+        ///
+        /// <para>Breite und Hoehe muessen im selben Verhaeltnis zueinander
+        /// stehen wie die Referenz des Designers (7 zu 15). Gemessen wird
+        /// deshalb die Zeilenhoehe der Schrift, daraus die Breite eines
+        /// Zeichens - beides skaliert linear mit dem Schriftgrad.</para>
+        /// </summary>
+        private static System.Drawing.SizeF MeasureFontBaseline()
+        {
+            using (var probe = new System.Drawing.Bitmap(1, 1))
+            using (Graphics g = Graphics.FromImage(probe))
+            {
+                float height = Theme.FontBody.GetHeight(g);
+
+                // Seitenverhaeltnis der Referenz: 15 px Hoehe entsprechen
+                // 7 px Breite.
+                const float ReferenceRatio = 7F / 15F;
+
+                return new System.Drawing.SizeF(height * ReferenceRatio, height);
+            }
+        }
+
+        /// <summary>
+        /// Laeuft nach dem ersten Zeichnen. Zu diesem Zeitpunkt ist das Fenster
+        /// groesser als in <c>InitializeComponent</c>, damit DPI-Skalierung und
+        /// Autoscale abgeschlossen sind - sonst sassen die Karten verschaoben.
+        /// </summary>
+        private void Form1_Shown(object sender, EventArgs e)
+        {
+            ApplyWindowsTheme();
+            ApplyThemeToControls();
         }
 
         protected override void OnHandleCreated(EventArgs e)
@@ -85,8 +148,6 @@ namespace crytec
 
         private void Form1_Load(object sender, EventArgs e)
         {
-            label1.Text = "";
-
             string[] args = Environment.GetCommandLineArgs();
             if (args.Length < 2)
             {
@@ -138,23 +199,82 @@ namespace crytec
 
             string name = Path.GetFileName(_targetPath.TrimEnd(Path.DirectorySeparatorChar));
             if (_isDirectory) name += "\\";
+            this.Text = "privateCrypt — " + name;
 
-            this.Text = "privateCrypt - " + name;
+            lblPath.Text = name;
+            lblProgressPath.Text = name;
+            toolTip.SetToolTip(lblPath, _targetPath);
+            toolTip.SetToolTip(lblProgressPath, _targetPath);
 
             if (_encryptMode)
             {
+                lblOperation.Text = "Verschlüsseln";
+                lblProgressOperation.Text = "Wird verschlüsselt";
                 button1.Text = "verschlüsseln";
-                label1.Text = "Verschlüsseln → AES-256-CBC + HMAC-SHA256";
+                lblAlgorithm.Text = "AES-256-CBC + HMAC-SHA256 · neues Format PCv4";
+                lblProgressAlgorithm.Text = lblAlgorithm.Text;
+                lblFooter.Text = "Das Original wird nach erfolgreicher Verschlüsselung sicher gelöscht.";
             }
             else
             {
+                lblOperation.Text = "Entschlüsseln";
+                lblProgressOperation.Text = "Wird entschlüsselt";
                 button1.Text = "entschlüsseln";
-                label1.Text = DescribeFormat(_targetPath);
+
+                // Bei einem Ordner gibt es kein einzelnes Container-Format -
+                // DetectFormat wuerde am Verzeichnis scheitern und "Unbekanntes
+                // Format" melden. Stattdessen wird beschrieben, was passiert.
+                lblAlgorithm.Text = _isDirectory
+                    ? DescribeFolderOperation()
+                    : DescribeFormat(_targetPath);
+                lblProgressAlgorithm.Text = lblAlgorithm.Text;
+                lblFooter.Text = DescribeFooter(_targetPath);
+
                 checkBox1.Visible = !_isDirectory;
                 checkBox1.Checked = true;
             }
 
             textBox1.Focus();
+        }
+
+        /// <summary>
+        /// Beschreibt, was beim Entschluesseln eines Ordners geschieht. Ein Ordner
+        /// hat kein einheitliches Container-Format - die Dateien darin werden
+        /// einzeln erkannt und gegebenenfalls auf PCv4 gebracht.
+        /// </summary>
+        private static string DescribeFolderOperation()
+        {
+            return "Alle Dateien werden entschlüsselt · Altformate werden auf PCv4 aktualisiert";
+        }
+
+        /// <summary>
+        /// Fusszeilentext zum erkannten Format. Bei Altformaten wird der
+        /// Integritaetsschutz ausdruecklich genannt - das ist der Unterschied,
+        /// den ein Nutzer sonst erst beim Manipulieren einer Datei bemerkt.
+        /// </summary>
+        private static string DescribeFooter(string path)
+        {
+            try
+            {
+                switch (PolyAES.DetectFormat(path))
+                {
+                    case ContainerFormat.V4:
+                    case ContainerFormat.V3:
+                        return "Integritätsschutz aktiv — Manipulation wird erkannt.";
+                    case ContainerFormat.V2:
+                        return "Hinweis: Format 2.0 ohne Integritätsschutz. Ordner-Entschlüsseln aktualisiert sie auf PCv4.";
+                    case ContainerFormat.Legacy:
+                        return "Hinweis: Format von 2011 ohne Integritätsschutz. Ordner-Entschlüsseln aktualisiert sie auf PCv4.";
+                    default:
+                        return "Dieses Programm überschreibt vorhandene Dateien nicht.";
+                }
+            }
+            catch
+            {
+                // Kann kein einzelnes Format erkannt werden - etwa weil der Pfad
+                // ein Ordner ist. Das ist kein Fehler.
+                return "Dieses Programm überschreibt vorhandene Dateien nicht.";
+            }
         }
 
         /// <summary>Wertet die Kommandozeilenargumente aus.</summary>
@@ -213,15 +333,16 @@ namespace crytec
             {
                 switch (PolyAES.DetectFormat(path))
                 {
-                    case ContainerFormat.V3: return "Entschlüsseln → PCv3 · AES-256-CBC + HMAC-SHA256";
-                    case ContainerFormat.V2: return "Entschlüsseln → PCv2 · ohne Integritätsschutz";
-                    case ContainerFormat.Legacy: return "Entschlüsseln → Rijndael-256 (2011) · ohne Integritätsschutz";
-                    default: return "Entschlüsseln → unbekanntes Format";
+                    case ContainerFormat.V4: return "PCv4 · AES-256-CBC + HMAC-SHA256 · getrennte Schlüssel";
+                    case ContainerFormat.V3: return "PCv3 · AES-256-CBC + HMAC-SHA256 · wird beim Ordnerlauf auf PCv4 aktualisiert";
+                    case ContainerFormat.V2: return "PCv2 · ohne Integritätsschutz";
+                    case ContainerFormat.Legacy: return "Rijndael-256 (2011) · ohne Integritätsschutz";
+                    default: return "Unbekanntes Format";
                 }
             }
             catch
             {
-                return "Entschlüsseln → unbekanntes Format";
+                return "Unbekanntes Format";
             }
         }
 
@@ -233,10 +354,11 @@ namespace crytec
 
             MessageBox.Show(
                 "privateCrypt " + fileVersion + "\r\n\r\n" +
-                "Aktuelles Container-Format: PCv3\r\n" +
+                "Aktuelles Container-Format: PCv4\r\n" +
                 "  AES-256-CBC + HMAC-SHA256 (Integritätsschutz)\r\n" +
+                "  getrennte Schlüssel für Verschlüsselung und Signatur\r\n" +
                 "  PBKDF2-HMAC-SHA256, " + PolyAES.Pbkdf2Iterations.ToString("N0") + " Iterationen\r\n\r\n" +
-                "Lesbar: PCv3, PCv2 (2.0), Rijndael-256 (2011)\r\n" +
+                "Lesbar: PCv4, PCv3, PCv2 (2.0), Rijndael-256 (2011)\r\n" +
                 "Installationspfad: " + Application.StartupPath,
                 "privateCrypt", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
@@ -328,13 +450,22 @@ namespace crytec
             public readonly List<string> Errors = new List<string>();
             public readonly List<string> Skipped = new List<string>();
 
-            /// <summary>Dateien, die nach dem Entschluesseln auf v3 aktualisiert wurden.</summary>
+            /// <summary>Dateien, die nach dem Entschluesseln auf v4 aktualisiert wurden.</summary>
             public int UpgradedFromV2;
 
-            /// <summary>Dateien aus dem Originalformat von 2011, die auf v3 aktualisiert wurden.</summary>
+            /// <summary>Dateien aus Format v3, die auf v4 aktualisiert wurden.</summary>
+            public int UpgradedFromV3;
+
+            /// <summary>Dateien aus dem Originalformat von 2011, die auf v4 aktualisiert wurden.</summary>
             public int UpgradedFromLegacy;
 
             public bool Cancelled;
+        }
+
+        /// <summary>Gesamtzahl der auf das aktuelle Format gebrachten Dateien.</summary>
+        private static int UpgradedTotal(OperationResult result)
+        {
+            return result.UpgradedFromV2 + result.UpgradedFromV3 + result.UpgradedFromLegacy;
         }
 
         private async Task RunOperationAsync(char[] password)
@@ -401,12 +532,12 @@ namespace crytec
 
                 if (_encryptMode)
                 {
-                    session.EncryptFile(source, target, false);
+                    session.EncryptFile(source, target, false, token);
                     FileOps.SecureDelete(source);
                 }
                 else
                 {
-                    session.DecryptFile(source, target, false);
+                    session.DecryptFile(source, target, false, token);
                     FileOps.SecureDelete(source);
                 }
 
@@ -473,7 +604,7 @@ namespace crytec
 
                     if (_encryptMode)
                     {
-                        session.EncryptFile(file, target, false);
+                        session.EncryptFile(file, target, false, token);
                         FileOps.SecureDelete(file);
                     }
                     else
@@ -482,19 +613,21 @@ namespace crytec
                         // Datei weg und laesst sich nicht mehr beurteilen.
                         ContainerFormat original = PolyAES.DetectFormat(file);
 
-                        session.DecryptFile(file, target, false);
+                        session.DecryptFile(file, target, false, token);
                         FileOps.SecureDelete(file);
 
-                        // Alte Dateien (v2 bzw. Original von 2011) sofort wieder
-                        // verschluesseln, damit der Ordner danach vollstaendig auf
-                        // v3 steht. Reihenfolge ist wichtig: erst muss die alte
-                        // Chiffre weg, sonst blockiert sie das Neuschreiben.
-                        if (original == ContainerFormat.V2 || original == ContainerFormat.Legacy)
+                        // Alles, was nicht dem aktuellen Format entspricht, sofort
+                        // wieder verschluesseln, damit der Ordner danach vollstaendig
+                        // auf v4 steht. Betrifft v2, v3 und das Original von 2011.
+                        // Reihenfolge ist wichtig: erst muss die alte Chiffre weg,
+                        // sonst blockiert sie das Neuschreiben.
+                        if (original != ContainerFormat.V4 && original != ContainerFormat.Unknown)
                         {
-                            session.EncryptFile(target, file, false);
+                            session.EncryptFile(target, file, false, token);
                             FileOps.SecureDelete(target);
 
                             if (original == ContainerFormat.V2) result.UpgradedFromV2++;
+                            else if (original == ContainerFormat.V3) result.UpgradedFromV3++;
                             else result.UpgradedFromLegacy++;
                         }
                     }
@@ -527,9 +660,9 @@ namespace crytec
             {
                 // Auch bei reinen Upgrades hinweisen - sonst merkt niemand,
                 // dass der Ordner jetzt im aktuellen Format steht.
-                bool upgraded = (result.UpgradedFromV2 + result.UpgradedFromLegacy) > 0;
+                int upgraded = UpgradedTotal(result);
 
-                if (result.Skipped.Count > 0 || upgraded)
+                if (result.Skipped.Count > 0 || upgraded > 0)
                 {
                     MessageBox.Show(BuildSummary(result), "privateCrypt",
                         MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -553,15 +686,20 @@ namespace crytec
             if (result.Skipped.Count > 0) sb.Append("\nÜbersprungen: ").Append(result.Skipped.Count);
             if (result.Errors.Count > 0) sb.Append("\nFehlgeschlagen: ").Append(result.Errors.Count);
 
-            // Auf v3 aktualisierte Altdateien gesondert ausweisen: das ist die
+            // Auf v4 aktualisierte Altdateien gesondert ausweisen: das ist die
             // Antwort auf die Frage "was ist noch nicht im aktuellen Format?".
-            int upgraded = result.UpgradedFromV2 + result.UpgradedFromLegacy;
+            int upgraded = UpgradedTotal(result);
             if (upgraded > 0)
             {
-                sb.Append("\nAuf AES-256 + HMAC (PCv3) aktualisiert: ").Append(upgraded);
+                sb.Append("\nAuf PCv4 aktualisiert: ").Append(upgraded);
                 var details = new System.Text.StringBuilder();
+                if (result.UpgradedFromV3 > 0)
+                    details.Append(result.UpgradedFromV3).Append(" aus PCv3");
                 if (result.UpgradedFromV2 > 0)
+                {
+                    if (details.Length > 0) details.Append(", ");
                     details.Append(result.UpgradedFromV2).Append(" aus Version 2.0");
+                }
                 if (result.UpgradedFromLegacy > 0)
                 {
                     if (details.Length > 0) details.Append(", ");
@@ -618,13 +756,19 @@ namespace crytec
                 tempFile = Path.Combine(QuickEditDir,
                     Guid.NewGuid().ToString("N") + (extension ?? string.Empty).ToLowerInvariant());
 
-IProgress<ProgressState> progress = new Progress<ProgressState>(OnProgress);
+                // Eigene Fortschritsanzeige: Quick Edit laeuft nur fuer eine
+                // einzelne Datei, dafuer braucht es keine Karte.
+                IProgress<ProgressState> progress = new Progress<ProgressState>(s =>
+                {
+                    if (s.Status != null) lblProgress.Text = s.Status;
+                });
+
                 await Task.Run(() =>
                 {
                     using (var session = new PolyAES(password))
                     {
                         progress.Report(new ProgressState { Status = "Schlüssel wird abgeleitet …", Indeterminate = true });
-                        session.DecryptFile(source, tempFile, false);
+                        session.DecryptFile(source, tempFile, false, token);
                     }
                 }, token);
 
@@ -746,15 +890,28 @@ IProgress<ProgressState> progress = new Progress<ProgressState>(OnProgress);
                         if (File.GetLastWriteTime(file) > cutoff)
                             continue;
 
-                        // Nur entfernen, wenn keine andere Instanz die Datei offen haelt.
-                        using (new FileStream(file, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                        // Nur loeschen, wenn keine andere Instanz die Datei offen haelt.
+                        //
+                        // Wichtig: Die Datei wird nur zum Pruefen exklusiv
+                        // geoeffnet und sofort wieder geschlossen. Ein Loeschen
+                        // innerhalb dieses using-Blocks wuerde scheitern - der
+                        // eigene exklusive Handle verhindert es, die Ausnahme
+                        // wurde geschluckt, und die Klartextdatei waere fuer
+                        // immer liegen geblieben.
+                        bool free;
+                        try
                         {
-                            FileOps.SecureDelete(file);
+                            using (new FileStream(file, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                                free = true;
                         }
-                    }
-                    catch (IOException)
-                    {
-                        // Datei ist noch in Benutzung - stehen lassen.
+                        catch (IOException)
+                        {
+                            // Datei ist noch in Benutzung - stehen lassen.
+                            continue;
+                        }
+
+                        if (free)
+                            FileOps.SecureDelete(file);
                     }
                     catch (UnauthorizedAccessException)
                     {
@@ -785,41 +942,49 @@ IProgress<ProgressState> progress = new Progress<ProgressState>(OnProgress);
             if (!_busy)
                 return;
 
-            label1.Text = state.Status ?? "";
+            lblProgress.Text = state.Status ?? "";
 
             if (state.Indeterminate)
             {
-                progressBar1.Style = ProgressBarStyle.Marquee;
+                progressBar1.Style = System.Windows.Forms.ProgressBarStyle.Marquee;
                 progressBar1.Value = 0;
             }
             else if (state.Total > 0)
             {
-                progressBar1.Style = ProgressBarStyle.Continuous;
+                progressBar1.Style = System.Windows.Forms.ProgressBarStyle.Continuous;
                 progressBar1.Maximum = state.Total;
                 progressBar1.Value = Math.Min(state.Current, state.Total);
             }
         }
 
+        /// <summary>
+        /// Schaltet den Zustand des Fensters um.
+        ///
+        /// <para>Waehrend eines Ordnerlaufs tauscht <c>panelProgress</c> die
+        /// Hauptkarte aus. Beide sind exakt gleich gross und liegen an derselben
+        /// Stelle, dadurch springt das Fenster nicht und die Hoehe bleibt
+        /// unveraendert - im Gegensatz zu einem Fenstermitschnitt, der waehrend
+        /// des Laufs die Karten verschieben wuerde.</para>
+        /// </summary>
         private void SetBusy(bool busy, bool showProgress = false)
         {
             _busy = busy;
             textBox1.Enabled = !busy;
+            textBox1.ReadOnly = busy;
             button1.Enabled = !busy;
             checkBox1.Enabled = !busy;
+            linkReveal.Enabled = !busy;
             UseWaitCursor = busy;
 
-            progressBar1.Visible = busy && showProgress;
-            button2.Visible = busy && showProgress;
-            progressBar1.Style = ProgressBarStyle.Marquee;
-            button2.Enabled = true;
-            button2.Text = "Abbrechen";
+            panelProgress.Visible = busy && showProgress;
+            panelCard.Visible = !(busy && showProgress);
 
-            if (!busy)
+            if (busy)
             {
+                progressBar1.Style = System.Windows.Forms.ProgressBarStyle.Marquee;
                 progressBar1.Value = 0;
-                label1.Text = _encryptMode
-                    ? "Verschlüsseln → AES-256-CBC + HMAC-SHA256"
-                    : DescribeFormat(_targetPath);
+                button2.Enabled = true;
+                button2.Text = "Abbrechen";
             }
         }
 
@@ -869,33 +1034,64 @@ IProgress<ProgressState> progress = new Progress<ProgressState>(OnProgress);
         // Darstellung
         // ------------------------------------------------------------------
 
+        /// <summary>
+        /// Setzt alle Farben und Schriften aus <see cref="Theme"/>.
+        ///
+        /// <para>Die Steuerelemente bekommen hier keine Windows-Standardfarben mehr,
+        /// sondern die Palette aus dem Theme. Das ist der Punkt, an dem hell und
+        /// dunkel wirklich zusammenpassen - in Version 2.0/3.0 wurden nur
+        /// Hintergrundfarben gesetzt, Rahmen und Beschriftungen blieben im
+        /// Systemstil und passten nicht dazu.</para>
+        /// </summary>
+        private void ApplyThemeToControls()
+        {
+            BackColor = Theme.Form;
+
+            lblOperation.ForeColor = Theme.TextStrong;
+            lblPath.ForeColor = Theme.Text;
+            lblAlgorithm.ForeColor = Theme.TextMuted;
+            lblPassword.ForeColor = Theme.Text;
+            lblProgress.ForeColor = Theme.TextMuted;
+            lblProgressOperation.ForeColor = Theme.TextStrong;
+            lblProgressPath.ForeColor = Theme.Text;
+            lblProgressAlgorithm.ForeColor = Theme.TextMuted;
+            lblFooter.ForeColor = Theme.Footer;
+
+            // Felder: Hintergrund und Rahmen kommen aus dem Theme.
+            textBox1.BackColor = Theme.FieldBack;
+            textBox1.ForeColor = Theme.FieldText;
+
+            checkBox1.BackColor = Theme.Card;
+            checkBox1.ForeColor = Theme.Text;
+            checkBox1.FlatAppearance.BorderColor = Theme.FieldBorder;
+
+            panelCard.BackColor = Theme.Card;
+            panelProgress.BackColor = Theme.Card;
+
+            linkReveal.ForeColor = Theme.Accent;
+            linkReveal.LinkColor = Theme.Accent;
+            linkReveal.ActiveLinkColor = Theme.AccentHover;
+            linkReveal.VisitedLinkColor = Theme.Accent;
+
+            // FlatButton und RoundedProgressBar lesen ihre Farben beim Zeichnen
+            // selbst - hier genuegt ein Neuzeichnen.
+            button1.Invalidate();
+            button2.Invalidate();
+            progressBar1.RefreshTheme();
+            panelCard.Invalidate();
+            panelProgress.Invalidate();
+        }
+
+        /// <summary>
+        /// Titelleiste und Fensterform an das Theme anpassen. Beides macht erst
+        /// der DWM, also nach dem Handle - deshalb wird die Methode sowohl in
+        /// <see cref="OnHandleCreated"/> als auch nach dem ersten Zeichnen
+        /// aufgerufen.
+        /// </summary>
         private void ApplyWindowsTheme()
         {
-            _isDark = ReadDarkMode();
-
-            if (_isDark)
-            {
-                this.BackColor = System.Drawing.Color.FromArgb(28, 28, 28);
-                textBox1.BackColor = System.Drawing.Color.FromArgb(45, 45, 45);
-                textBox1.ForeColor = System.Drawing.Color.White;
-                label1.ForeColor = System.Drawing.Color.FromArgb(220, 220, 220);
-                checkBox1.ForeColor = System.Drawing.Color.FromArgb(220, 220, 220);
-                button2.BackColor = System.Drawing.Color.FromArgb(70, 70, 70);
-                button2.ForeColor = System.Drawing.Color.White;
-            }
-            else
-            {
-                this.BackColor = System.Drawing.Color.FromArgb(243, 243, 243);
-                textBox1.BackColor = System.Drawing.Color.White;
-                textBox1.ForeColor = System.Drawing.Color.Black;
-                label1.ForeColor = System.Drawing.Color.FromArgb(30, 30, 30);
-                checkBox1.ForeColor = System.Drawing.Color.FromArgb(30, 30, 30);
-                button2.BackColor = System.Drawing.Color.FromArgb(200, 200, 200);
-                button2.ForeColor = System.Drawing.Color.FromArgb(30, 30, 30);
-            }
-
             // Dunkle Titelleiste
-            int darkMode = _isDark ? 1 : 0;
+            int darkMode = Theme.IsDark ? 1 : 0;
             try { DwmSetWindowAttribute(this.Handle, DWMWA_USE_IMMERSIVE_DARK_MODE, ref darkMode, sizeof(int)); }
             catch { }
 
@@ -905,23 +1101,42 @@ IProgress<ProgressState> progress = new Progress<ProgressState>(OnProgress);
             catch { }
         }
 
-        private static bool ReadDarkMode()
+        /// <summary>
+        /// Schaltet das Passwort zwischen verborgen und sichtbar um.
+        ///
+        /// <para>Bei einer falschen Eingabe ist ein Tippfehler die haeufigste
+        /// Ursache. Das kurzzeitige Einblenden erspart das Neustarten des
+        /// ganzen Vorgangs - inklusive der rund 1,4 s Schluesselableitung.</para>
+        /// </summary>
+        private void linkReveal_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
         {
-            try
-            {
-                using (var key = Registry.CurrentUser.OpenSubKey(
-                    @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"))
-                {
-                    if (key != null)
-                    {
-                        object val = key.GetValue("AppsUseLightTheme");
-                        return val is int i && i == 0;
-                    }
-                }
-            }
-            catch { }
+            if (_busy) return;
 
-            return false;
+            _passwordRevealed = !_passwordRevealed;
+            textBox1.SetRevealed(_passwordRevealed);
+            linkReveal.Text = _passwordRevealed ? "verbergen" : "anzeigen";
+
+            // Feld behalten, was der Nutzer gerade eintippt.
+            int caret = textBox1.SelectionStart;
+            textBox1.Focus();
+            textBox1.SelectionStart = caret;
+        }
+
+        private void textBox1_Enter(object sender, EventArgs e)
+        {
+            if (Theme.IsDark) textBox1.BackColor = Theme.FieldBack;
+        }
+
+        private void textBox1_Leave(object sender, EventArgs e)
+        {
+            // Beim Verlassen wieder verdecken: sichtbares Passwort auf dem
+            // Bildschirm ist ein Risiko, das nicht sein muss.
+            if (_passwordRevealed)
+            {
+                _passwordRevealed = false;
+                textBox1.SetRevealed(false);
+                linkReveal.Text = "anzeigen";
+            }
         }
     }
 }

@@ -2,6 +2,99 @@
 
 All notable changes to privateCrypt are documented here.
 
+## [4.0.0] - 2026
+
+Fixes a cryptographic defect in 3.0, closes two data-loss paths, and rebuilds the
+password window.
+
+### Security
+
+- **New container format v4 with proper key separation.** In 3.0, `DeriveFileKeys`
+  derived the cipher key and the MAC key from **one single seed**, so both were
+  bit-for-bit identical — the AES key *was* the HMAC key. The documentation for
+  3.0 described this as domain-separated (`enc`/`mac`); the code contained only
+  one label. The cipher itself was unaffected, and no file could be read or
+  written that should not have been, but the defense-in-depth that Encrypt-then-MAC
+  relies on was absent. In v4 the 64-byte master key is split in half: the first
+  32 bytes feed only `HMAC(master[0:32], "…/enc" ‖ salt ‖ iv)`, the second only
+  `HMAC(master[32:64], "…/mac" ‖ salt ‖ iv)`. `PolyAES.Tests` asserts the two keys
+  differ, and separately asserts that the v3 path still reproduces the identical
+  key — a regression in either direction fails the suite.
+- **v3 files remain readable.** `DeriveV3Keys` reproduces the 3.0 derivation
+  deliberately and unchanged; every file written by 3.0 still opens. The folder
+  run upgrades v3 files alongside v2 and v1.
+- **Cancellation can no longer be defeated by a missing token.** All crypto entry
+  points accept a `CancellationToken` and check it every 64 KiB. Previously a
+  cancelled folder run could not interrupt the file currently in progress.
+
+### Fixed
+
+- **Data loss on commit.** `CommitFile` deleted the target and then moved the
+  temporary file into place. Between those two calls the target did not exist — a
+  crash there lost the file entirely, which for a just-decrypted file means total
+  loss. It now uses `File.Replace`, which swaps atomically at filesystem level, with
+  the old path as fallback on volumes that do not support it.
+- **Folder runs were uncancellable in practice.** The progress bar sat at y = 118
+  and the cancel button at y = 140 in a form only 95 px high — both were outside
+  the client area and never appeared on screen. The "Cancel" feature was documented
+  and present in the code, but not reachable. Progress and cancel now occupy a card
+  that replaces the input card at the same position, so the window size does not
+  change mid-run.
+- **Decryption of v2 and 2011 files loaded the entire file into memory.** Both
+  legacy paths used `File.ReadAllBytes` plus `TransformFinalBlock`, i.e. the file
+  was held three times over. The executable is x86, so anything above roughly
+  700 MB failed with `OutOfMemoryException` — contradicting the documented
+  "memory use does not scale with file size". Both paths now stream from disk, and
+  a test decrypts a 48 MB legacy file while watching the working set.
+- **An unreadable directory aborted the whole folder run.** `CollectFiles` caught
+  `UnauthorizedAccessException` and `DirectoryNotFoundException` but not
+  `IOException`, which is what an interrupted network share or an over-long path
+  raises. A single such directory failed the entire run.
+- **Orphaned Quick-Edit leftovers were never actually deleted.** The cleanup probe
+  opened each file with `FileShare.None` and then called `SecureDelete` *inside*
+  that `using` block; the exclusive handle made its own delete fail, and the
+  exception was swallowed. Plaintext could therefore survive indefinitely.
+- **Event handler left in the Quick-Edit path** referenced a progress handler that
+  targeted the folder-only layout.
+
+### Changed
+
+- **New interface.** Fluent-style password window: card on a tinted background,
+  Segoe UI Variable where available, rounded corners matched to the Windows
+  corner setting, accent-coloured primary button with hover and pressed states,
+  custom-drawn password field with a focus border, and a custom progress bar —
+  the stock WinForms bar cannot be coloured and leaves a bright stripe in dark
+  mode. The action button now spans the full card width, so its label can no
+  longer be truncated regardless of DPI scaling.
+- **Format shown in the UI is honest per file.** The footer states whether
+  integrity protection is active, and names the detected format.
+- **Password can be revealed briefly** via a link, and re-hides when the field
+  loses focus — a mistyped password no longer costs a full restart including the
+  1.4 s key derivation.
+- **Folder upgrades now include PCv3.** Previously only v2 and the 2011 original
+  were refreshed.
+- **File and folder paths are shown as a tooltip** when the label truncates a long
+  name.
+
+### Added
+
+- **`docs/MIGRATION.md`** — how to bring 2.0, 3.0 and 2011 files onto PCv4, what
+  the defect actually was, and what it did and did not affect.
+- **Test suite grown from 119 to 142 checks**, including a v3 compatibility test
+  built from an independent reimplementation of the 3.0 key derivation (including
+  its shared-key flaw), a memory-growth test for the legacy paths, and cancellation
+  tests.
+- **Installer**: `uninsdeletekey` entries for the `DefaultIcon` and `shell\open`
+  subkeys, which `[Registry]` did not cover.
+
+### Verified
+
+- 142/142 unit tests pass.
+- v3, v2 and 2011 files decrypt correctly under 4.0.
+- A 48 MB legacy file decrypts without the working set growing with file size.
+
+---
+
 ## [3.0.0] - 2026
 
 The release that closes the unauthenticated-ciphertext gap from 2.0 and makes the
@@ -20,8 +113,10 @@ folder operation usable on real data sets.
 - **PBKDF2 raised from 100,000 to 300,000 iterations** for the master key (SHA-256).
   This is 150× the 2011 original and still under ~1.4 s.
 - **Master key derived once per session, not per file.** Per-file keys come from HMAC over
-  the master key, domain-separated (`enc`/`mac`) and bound to the file's salt and IV. A
-  folder of 500 files costs the same key-stretching time as one file.
+  the master key, bound to the file's salt and IV. A folder of 500 files costs the same
+  key-stretching time as one file.
+  > **Corrected in 4.0:** this entry originally claimed the subkeys were
+  > domain-separated (`enc`/`mac`). They were not — see the 4.0 entry above.
 - **Password handled as `char[]` and zeroed after use.** The 2.0 code cleared the text box
   but kept the password in an immutable `String`, which cannot be erased.
 - **Constant-time comparison** for magic bytes and the HMAC tag.

@@ -163,7 +163,7 @@ try {
         $enc = "$f.protected"
         if (Test-Path $enc) {
             $magic = [System.Text.Encoding]::ASCII.GetString([byte[]](Get-Content -LiteralPath $enc -Encoding Byte -TotalCount 4))
-            if ($magic -eq "PCv3") { Ok ("1: PCv3 erzeugt ({0} Bytes)" -f (Get-Item $enc).Length) } else { Bad "1: Magic '$magic'" }
+            if ($magic -eq "PCv4") { Ok ("1: PCv4 erzeugt ({0} Bytes)" -f (Get-Item $enc).Length) } else { Bad "1: Magic '$magic'" }
         } else { Bad "1: keine .protected erzeugt" }
         if (Test-Path $f) { Bad "1: Original nicht entfernt" } else { Ok "1: Original sicher geloescht" }
     }
@@ -296,10 +296,10 @@ try {
 
     # =====================================================================
     Write-Host ""
-    Write-Host "=== 8: Auto-Upgrade von Altformat auf PCv3 (Ordnerlauf) ==="
+    Write-Host "=== 8: Auto-Upgrade von Altformat auf PCv4 (Ordnerlauf) ==="
     # Echter Altformat-Ordner: zwei v1-Vektoren aus dem Original von 2011, beide
     # mit dem Passwort "pass1234", abgelegt als .protected. Der Ordnerlauf
-    # entschluesselt sie und verschluesselt sie sofort wieder als PCv3.
+    # entschluesselt sie und verschluesselt sie sofort wieder als PCv4.
     #
     # Erwartet wird ausdruecklich: es bleibt KEIN Klartext liegen. Das ist der
     # Sinn des Upgrades - die Datei soll am Ende verschluesselt sein, nicht
@@ -312,7 +312,7 @@ try {
 
     foreach ($n in @("altA.txt.protected","altB.txt.protected")) {
         $m = [System.Text.Encoding]::ASCII.GetString([byte[]](Get-Content -LiteralPath (Join-Path $d8 $n) -Encoding Byte -TotalCount 4))
-        if ($m -eq "PCv3") { Bad "8: $n ist bereits PCv3 - Vorbedingung verletzt" }
+        if ($m -eq "PCv4") { Bad "8: $n ist bereits PCv4 - Vorbedingung verletzt" }
     }
 
     $a8 = Start-App $d8 "d"
@@ -332,7 +332,7 @@ try {
             $q = Join-Path $d8 $n
             if (-not (Test-Path $q)) { Bad "8: .protected fehlt: $n"; continue }
             $m = [System.Text.Encoding]::ASCII.GetString([byte[]](Get-Content -LiteralPath $q -Encoding Byte -TotalCount 4))
-            if ($m -eq "PCv3") { Ok "8: $n ist jetzt PCv3" } else { Bad "8: $n hat Magic '$m' statt PCv3" }
+            if ($m -eq "PCv4") { Ok "8: $n ist jetzt PCv4" } else { Bad "8: $n hat Magic '$m' statt PCv4" }
         }
 
         # Und sind die aktualisierten Dateien mit demselben Passwort wieder lesbar?

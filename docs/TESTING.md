@@ -14,7 +14,7 @@ Prüfung ersetzt nichts davon — sie ist die letzte Instanz.
 
 ## 1. Unit-Tests
 
-Krypto-Schicht und Dateisystem-Helfer, 119 Prüfungen, bewusst als
+Krypto-Schicht und Dateisystem-Helfer, 142 Prüfungen, bewusst als
 Konsolen-Anwendung **ohne** NuGet und ohne Test-Framework — sonst
 scheitert der Lauf an Paket-Restore.
 
@@ -35,11 +35,40 @@ noch einmal zusammen.
 | Round-Trip | 0, 1, 15, 16, 17, 31, 32, 33, 4095, 4096, 4097, 65535, 65536, 65537, 100000 Byte — also über AES-Block- und Puffergrenzen hinweg; zusätzlich Größe des Containers geprüft |
 | Zufälligkeit | gleicher Klartext → unterschiedliche Chiffre; Salt und IV variieren je Datei |
 | Format | Magic-Bytes, Headeraufteilung, `DetectFormat` inkl. leerer Datei |
+| **Schlüsseltrennung** | Chiffrier- und Signaturschlüssel sind verschieden, je 32 Byte, nicht null und in vielen Bytes unterschiedlich; Ableitung reproduzierbar; anderer Salt ergibt anderen Schlüssel; v3 reproduziert nachweislich den gemeinsamen Schlüssel von 3.0 |
 | **Manipulation** | Bitflip in Ciphertext, Salt, IV und Signatur; vertauschte CBC-Blöcke; abgeschnittene Datei; entfernte Signatur; verlängerte Datei; falsches Passwort |
 | Nebenläufigkeit | Ziel bleibt bei fehlgeschlagener Entschlüsselung unangetastet, keine `.pctmp`-Reste |
 | Überschreiben | `overwrite=false` lässt das Ziel unverändert, `true` ersetzt es |
+| **Abbruch** | `CancellationToken` meldet Abbruch, legt kein Ziel an, hinterlässt keine `.pctmp`-Reste und lässt ein bestehendes Ziel unverändert — für Verschlüsseln und Entschlüsseln |
 | `FileOps` | case-insensitive Endung, `Replace`-Falle, leere Namen, Junction-Erkennung, `.db`-Übersprung |
-| **Rückwärtskompatibilität** | 6 feste v1-Vektoren, v2-Round-Trip, Fehlermeldungen bei zu kurzen Dateien und ungerader Blockgröße |
+| **Rückwärtskompatibilität** | 6 feste v1-Vektoren, v2-Round-Trip, **v3 aus Version 3.0** (einschließlich Manipulation), Fehlermeldungen bei zu kurzen Dateien und ungerader Blockgröße |
+| **Speicherverbrauch** | 48-MB-Altdatei in v2 und im 2011-Format wird entschlüsselt, während der Working Set des Testprozesses beobachtet wird; er darf nicht mit der Dateigröße wachsen |
+
+### Der v3-Test und warum er eine eigene Implementierung braucht
+
+`LegacyFormatWriter.MakeV3File` bildet die Schlüsselableitung von 3.0 nach —
+**einschließlich des Fehlers**, also mit einem einzigen Schlüssel für Chiffre
+und Signatur. Nur so lässt sich prüfen, dass 4.0 eine echte 3.0-Datei öffnet.
+
+Das ist keine Doppelung von Produktivcode, sondern der übliche Weg bei
+Rückwärtskompatibilität: derselbe Aufruf wie im Produktivcode würde denselben
+Fehler auf beiden Seiten reproduzieren und der Test bliebe grün. Ein Test, der
+nur `DecryptFile` mit dem Ergebnis von `EncryptFile` prüft, sagt über die
+Abwärtskompatibilität nichts aus.
+
+Aus demselben Grund existieren die v1-Vektoren im Repository.
+
+### Eine Stolperfalle beim Speichertest
+
+Der erste Entwurf dieses Tests hat **sich selbst falsch beschuldigt**: Er hat
+Klartext und Ergebnis mit `File.ReadAllBytes` verglichen und damit genau den
+Speicherbedarf erzeugt, den er ausschließen wollte (gemessen: +144 MB für eine
+48-MB-Datei).
+
+Korrekt ist, die Vorlage auf der Platte zu lassen und über einen Hash zu
+vergleichen — sowie den Testprozess im **Any-CPU-** statt **x86-**-Modus laufen
+zu lassen. Als 32-Bit-Prozess wäre ein Speicherfehler in der Datei nämlich gar
+nicht erst entstanden, und der Test hätte nichts nachweisen können.
 
 ### Die v1-Testvektoren
 
@@ -113,16 +142,28 @@ Remove-Item Env:\PCLOG
 Was keine Automatisierung ersetzt: Bedienung, Erscheinungsbild, das
 Gefühl beim Warten.
 
-- **Button-Beschriftung lesbar?** „entschlüsseln" muss vollständig
-  stehen. Grundlage: der Text braucht 78 px, der Button bietet 101 px.
-- **Fensterbreite** 400 px Client — die Beschriftung über dem
-  Passwortfeld und der Fenstertitel dürfen nicht abgeschnitten sein.
-- **Quick Edit**: temporär entschlüsseln, Viewer öffnet, beim Schließen
-  des Viewers verschwindet die App und die Temp-Datei wird gelöscht.
-- **Fortschritt und Abbrechen** bei einem Ordner mit vielen Dateien.
-- **Dunkelmodus** umschalten (Windows-Einstellungen → Personalisierung).
-- **Alte Dateien** aus 2.0 und 2011 öffnen; das Label im Fenster nennt
-  das erkannte Format.
+- **Button-Beschriftung lesbar?** „entschlüsseln" muss vollständig stehen.
+  Der Knopf nimmt jetzt die volle Kartenbreite (440 px) ein, ist also bei jeder
+  Skalierung breit genug — es ist trotzdem einen Blick wert.
+- **Fensterbreite** 520 px Client, Höhe 260 px. Lange Dateinamen werden mit
+  „…" gekürzt; der vollständige Name muss als Tooltip erscheinen.
+- **Quick Edit**: temporär entschlüsseln, Viewer öffnet, beim Schließen des
+  Viewers verschwindet die App und die Temp-Datei wird gelöscht.
+- **Fortschritt und Abbrechen** bei einem Ordner mit vielen Dateien. In 3.0 lagen
+  beide Elemente bei y = 118 und y = 140 in einem 95 px hohen Fenster und waren
+  damit **nie erreichbar** — der Abbruch war undurchführbar. Beide Elemente
+  müssen jetzt ohne Weiteres sichtbar sein.
+- **Anzeigen/Verbergen** des Passworts: Link klicken, Klartext erscheint, beim
+  Verlassen des Feldes wird wieder verdeckt.
+- **Dunkelmodus** umschalten (Windows-Einstellungen → Personalisierung). Die
+  Titelleiste, die Karten, das Passwortfeld und der Fortschrittsbalken müssen
+  gemeinsam umschalten; im Standard-ProgressBar blieb previously ein heller
+  Streifen stehen.
+- **Ecken abrunden aus** (Windows → Personalisierung → Ecken für Fenster
+  abrunden = Nie): die Karten müssen dann eckig sein, sonst wirkt die Karte
+  unrund gegen ein eckiges Fenster.
+- **Altdateien** aus 3.0, 2.0 und 2011 öffnen; die Hinweiszeile im Fenster nennt
+  das erkannte Format und ob Integritätsschutz besteht.
 
 ### Passwort
 

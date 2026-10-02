@@ -7,7 +7,7 @@
 ; The compiled setup will be placed in:  ..\dist\privateCrypt_Setup.exe
 
 #define AppName      "privateCrypt"
-#define AppVersion   "3.0"
+#define AppVersion   "4.0"
 #define AppPublisher "mundi86"
 #define AppExeName   "privateCrypt.exe"
 
@@ -50,6 +50,19 @@ DisableProgramGroupPage=yes
 OutputDir=..\dist
 OutputBaseFilename=privateCrypt_Setup
 SetupIconFile=..\File_crypt\File_crypt\1374605872_86255.ico
+
+; Der Uninstall-Eintrag in HKCU wird von [Registry] nicht vollstaendig
+; abgedeckt: die beiden ProgID-Unterschluessel (DefaultIcon, shell\open)
+; brauchen eigene uninsdeletekey-Eintraege. Sonst bliebe nach dem Entfernen
+; die Dateizuordnung .protected -> privateCrypt.protected im Registry stehen
+; und Explorer zeigte weiterhin das Schluessel-Icon auf leere Dateien.
+Root: HKCU; \
+      Subkey: "Software\Classes\privateCrypt.protected\DefaultIcon"; \
+      Flags: uninsdeletekey
+
+Root: HKCU; \
+      Subkey: "Software\Classes\privateCrypt.protected\shell\open"; \
+      Flags: uninsdeletekey
 
 ; Compression
 Compression=lzma2/ultra64

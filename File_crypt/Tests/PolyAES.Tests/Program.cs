@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using System.Threading;
 
 namespace crytec.Tests
 {
@@ -22,6 +23,7 @@ namespace crytec.Tests
             try
             {
                 RoundTripTests.Run(t, WorkDir, Session);
+                BackwardCompatTests.Run(t, WorkDir, Session);
                 TamperTests.Run(t, WorkDir, Session);
                 FileOpsTests.Run(t, WorkDir);
                 LegacyVectorTests.Run(t);

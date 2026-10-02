@@ -63,7 +63,9 @@
     <Compile Include="Program.cs" />
     <Compile Include="TestRunner.cs" />
     <Compile Include="LegacyVectorTests.cs" />
+    <Compile Include="LegacyFormatWriter.cs" />
     <Compile Include="RoundTripTests.cs" />
+    <Compile Include="BackwardCompatTests.cs" />
     <Compile Include="TamperTests.cs" />
     <Compile Include="FileOpsTests.cs" />
     <!-- Die echten Quelldateien werden mitkompiliert, nicht die DLL. -->

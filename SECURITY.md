@@ -4,8 +4,9 @@
 
 | Version | Supported | Notes |
 |---------|-----------|-------|
-| 3.x     | Yes       | Current release — AES-256-CBC **+ HMAC-SHA256** |
-| 2.x     | Decrypt only | Can read 2.0 files; new files are always written as v3 |
+| 4.x     | Yes       | Current release — AES-256-CBC **+ HMAC-SHA256**, getrennte Schlüssel |
+| 3.x     | Decrypt only | Reads 3.0 files; the folder run upgrades them to PCv4 |
+| 2.x     | Decrypt only | Can read 2.0 files; new files are always written as v4 |
 | 1.x     | No        | Legacy crypto (PBKDF2-SHA1, 2.000 iterations) — decrypt and re-encrypt |
 
 ## Reporting a Vulnerability
@@ -23,10 +24,10 @@ Include:
 
 ## Cryptographic Details
 
-### v3 format (current)
+### v4 format (current)
 
 ```
-[ "PCv3" 4 B ] [ salt 32 B ] [ iv 16 B ] [ ciphertext ... ] [ HMAC-SHA256 32 B ]
+[ "PCv4" 4 B ] [ salt 32 B ] [ iv 16 B ] [ ciphertext ... ] [ HMAC-SHA256 32 B ]
 ```
 
 | Property | Value |
@@ -34,16 +35,19 @@ Include:
 | Algorithm | AES-256-CBC, PKCS7 padding |
 | Authentication | HMAC-SHA256 over header **and** ciphertext (Encrypt-then-MAC) |
 | Key derivation | PBKDF2-HMAC-SHA256, 300,000 iterations |
-| Master key | 64 bytes, derived **once per session** from the password |
-| Per-file keys | `HMAC-SHA256(master, "enc"\|"mac" ‖ salt ‖ iv)` → 32 bytes each |
+| Master key | 64 bytes, derived **once per session** from the password, then **split in half** |
+| Cipher key | `HMAC-SHA256(master[0:32], "privateCrypt/v4/enc" ‖ salt ‖ iv)` → 32 bytes |
+| MAC key | `HMAC-SHA256(master[32:64], "privateCrypt/v4/mac" ‖ salt ‖ iv)` → 32 bytes |
 | Salt / IV | 32 / 16 bytes, CSPRNG, fresh for every single file |
 | Tag comparison | Constant time |
 | Verification order | Signature is checked **before** any plaintext is produced |
 
-**Why the master key?** PBKDF2 is deliberately expensive (~1.4 s). Deriving it once per
-session instead of once per file means a folder with 500 files costs the same as a single
-file. The per-file subkeys are derived with HMAC, which is essentially free, and stay
-domain-separated (`enc` vs `mac`) and bound to that specific file via its salt and IV.
+**Why the master key is split in half.** The cipher key and the MAC key must never
+be the same value. Encrypt-then-MAC with one shared key means a bug in either
+primitive is no longer isolated — and the whole protective effect of the MAC
+depends on exactly that isolation. The first 32 bytes of the master key feed only
+the cipher key, the second 32 only the MAC key, each with its own label. No byte
+of one key can ever appear in the other.
 
 **Why Encrypt-then-MAC?** v2 used bare AES-CBC. CBC without a MAC is malleable: flipping a
 single ciphertext bit changes exactly one plaintext bit in a predictable position, so an
@@ -52,7 +56,19 @@ password. Adding HMAC-SHA256 over the ciphertext closes that gap. Decryption ver
 tag first and produces no plaintext at all if it does not match.
 
 > Note: the error message deliberately does **not** distinguish "wrong password" from
-> "file was modified". Distinguishing them would leak information to an attacker.
+> > "file was modified". Distinguishing them would leak information to an attacker.
+
+### v3 format (read-only since 4.0)
+
+Same layout as v4, same HMAC, same 300,000 PBKDF2 iterations — but in version 3.0 both
+the cipher key and the MAC key were derived from **one single seed** and were therefore
+bit-for-bit identical. The key separation that v3's own documentation claimed does not
+exist in the files it produced. It was not a weakness that allowed reading or writing
+files; it was a missing defense-in-depth. Files remain readable, and the folder run
+upgrades them to v4.
+
+The reading path (`DeriveV3Keys`) reproduces the 3.0 derivation deliberately, unchanged.
+Any "improvement" there would make every file created by 3.0 unopenable.
 
 ### v2 format (read-only since 3.0)
 
@@ -65,10 +81,10 @@ tag first and produces no plaintext at all if it does not match.
 
 v2 files can be decrypted and are detected automatically. They carry no integrity
 protection — if you have v2 files lying around, decrypt them once and re-encrypt; that
-upgrades them to v3.
+upgrades them to v4.
 
 > **Folder mode does that for you.** Decrypting a folder upgrades every legacy file it
-> contains to v3 in the same pass, leaving no plaintext behind. The summary states how
+> contains to v4 in the same pass, leaving no plaintext behind. The summary states how
 > many files were upgraded and from which format. Single-file decryption keeps the old
 > format — re-encrypt manually if you want to upgrade one file.
 >
@@ -118,6 +134,11 @@ of the original algorithm, so the legacy path cannot regress unnoticed.
   exits. Because a viewer or the user can terminate the app abruptly, privateCrypt also
   removes leftovers older than 24 hours from that folder on the next start. The SSD
   limitation above applies.
+
+- **Cancellation granularity:** "Cancel" takes effect at the next 64 KiB block
+  boundary. A single file larger than a few hundred megabytes therefore still takes a
+  moment to respond. The partially written temporary file is removed and the target file
+  is never touched, so an interrupted run is always safe to repeat.
 
 - **Passphrase strength:** File security rests entirely on the passphrase. Iteration count
   cannot rescue a weak passphrase against an offline attack on a stolen file.
