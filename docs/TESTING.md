@@ -93,15 +93,18 @@ verifiziert, damit niemand die Testdaten versehentlich verändert.
 Startet die gebaute Anwendung, bedient sie über Windows UI Automation und
 prüft das Ergebnis auf der Platte. 31 Prüfungen:
 
-1. Einzeldatei verschlüsseln → PCv3-Container, Original gelöscht
+1. Einzeldatei verschlüsseln → PCv4-Container, Original gelöscht
 2. Round-Trip → Klartext bit-genau wiederhergestellt, `.protected` entfernt
 3. **Bitflip im Ciphertext** → Fehlermeldung, **kein Klartext**, Quelldatei intakt
 4. Falsches Passwort → kein Klartext, Quelldatei intakt
 5. Zu kurzes Passwort → abgewiesen, nichts verschlüsselt
 6. Ordner rekursiv → inkl. Unterordner, Leerzeichen im Namen, Großbuchstaben-Endung; `.db` übersprungen; keine Doppelverschlüsselung
 7. Überschreiben-Schutz → bestehende Datei unverändert
-8. **Auto-Upgrade** → zwei echte v1-Dateien aus `legacy-vectors` werden entschlüsselt und müssen als PCv3 wiederkommen, **ohne dass Klartext liegen bleibt**, und danach mit demselben Passwort wieder lesbar sein
+8. **Auto-Upgrade** → zwei echte v1-Dateien aus `legacy-vectors` werden entschlüsselt und müssen als PCv4 wiederkommen, **ohne dass Klartext liegen bleibt**, und danach mit demselben Passwort wieder lesbar sein
 9. `%TEMP%\privateCrypt-quickedit` enthält keine Reste
+
+> Die Punktzahl bleibt bei 31, weil sich nur die Magic-Byte-Prüfung von
+> `PCv3` auf `PCv4` geändert hat, nicht die Anzahl der Prüfungen.
 
 ### Zwei Fallen, die beide Zeit gekostet haben
 

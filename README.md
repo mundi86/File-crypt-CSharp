@@ -610,21 +610,37 @@ Anleitung zum Umstieg auf das aktuelle Format in
 
 ---
 
-## 📌 Versionsangaben an drei Stellen
+## 📌 Versionsangaben an vier Stellen
 
-Die Version steht in **drei** Dateien und muss überall gleich sein:
+Die Version steht in **vier** Dateien und muss überall gleich sein:
 
-| Datei | Ort |
-|---|---|
-| `File_crypt/File_crypt/Properties/AssemblyInfo.cs` | `AssemblyVersion` |
-| `File_crypt/File_crypt/cConfig.cs` | `AppVersion` (Uninstall-Eintrag) |
-| `installer/privateCrypt.iss` | `AppVersion` |
+| Datei | Ort | Wert |
+|---|---|---|
+| `File_crypt/File_crypt/Properties/AssemblyInfo.cs` | `AssemblyVersion`, `AssemblyFileVersion` | `4.0.0.0` |
+| `File_crypt/File_crypt/app.manifest` | `assemblyIdentity/@version` | `4.0.0.0` |
+| `File_crypt/File_crypt/cConfig.cs` | `AppVersion` (Uninstall-Eintrag) | `4.0` |
+| `installer/privateCrypt.iss` | `AppVersion` | `4.0` |
 
 Das ist nicht nur Kosmetik: wer nur in die Dateieigenschaften der EXE
 schaut, erkennt sonst nicht, welche Version läuft. Genau das ist beim
 Testen von 3.0 passiert — die Registry und der Installer meldeten schon
 3.0, die EXE aber noch 2.0.0.0, und es wurde versehentlich die alte
 Version getestet.
+
+**Prüfen statt glauben** — das hier deckt alle vier Stellen auf:
+
+```powershell
+Select-String -Path `
+  File_crypt\File_crypt\Properties\AssemblyInfo.cs -Pattern 'AssemblyVersion'
+Select-String -Path File_crypt\File_crypt\app.manifest         -Pattern 'assemblyIdentity'
+Select-String -Path File_crypt\File_crypt\cConfig.cs          -Pattern 'AppVersion\s*='
+Select-String -Path installer\privateCrypt.iss                -Pattern '#define AppVersion'
+```
+
+Die `assemblyIdentity` im Manifest erscheint nicht in den
+Dateieigenschaften — sie ist die Versionsidentität für Windows selbst
+(Activation Context). Sie desynchronisiert zu lassen fällt deshalb
+zuerst niemandem auf.
 
 **Kurz prüfen, welche Version wirklich läuft:**
 
