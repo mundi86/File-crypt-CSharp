@@ -33,30 +33,35 @@ namespace crytec
         private const int CardWidth = 488;
         private const int CardInner = 24;
         private const int ContentWidth = 440;
+        private const int BadgeSize = 44;
+        private const int BadgeTop = 20;
+        private const int TitleLeft = 80;
+        private const int TitleWidth = 384;
 
-        // Hoehe der Hauptkarte, aus dem Inhalt berechnet:
-        //   20  Titel (28)
-        //   52  Pfad (20)
-        //   74  Verfahren (18)
-        //  104  "Passwort" (18)
-        //  124  Feld (30)
-        //  160  Schnellansicht (22)
-        //  192  Knopf (38) -> endet bei 230
-        //  230 + 22 Freiraum = 252
-        private const int CardHeight = 252;
+        // Hoehe der Hauptkarte, aus dem Inhalt berechnet (Titel rechts der Plakette):
+        //   14  Titel (32), 20 Plakette (44), 48 Pfad (20), 68 Verfahren (18)
+        //  100  "Passwort" (18)
+        //  120  Feld (30)
+        //  158  Schnellansicht (22)
+        //  190  Knopf (44) -> endet bei 234
+        //  234 + 24 Freiraum = 258
+        // Fortschritt- und Ergebniskarte teilen Position und Groesse.
+        // Ihr Kopf (Plakette, Titel, Pfad, Verfahren) sitzt wie auf der Eingabekarte.
+        private const int CardHeight = 258;
 
-        private const int TitleTop = 20;
-        private const int PathTop = 52;
-        private const int AlgoTop = 74;
-        private const int PasswordLabelTop = 104;
-        private const int FieldTop = 124;
+        private const int TitleTop = 14;
+        private const int PathTop = 48;
+        private const int AlgoTop = 68;
+        private const int PasswordLabelTop = 100;
+        private const int FieldTop = 120;
         private const int FieldHeight = 30;
-        private const int QuickTop = 160;
-        private const int ActionTop = 192;
-        private const int ActionHeight = 38;
+        private const int QuickTop = 158;
+        private const int ActionTop = 190;
+        private const int ActionHeight = 44;
 
         private void InitializeComponent()
         {
+            this.badgeOperation = new crytec.StatusBadge();
             this.panelCard = new crytec.CardPanel();
             this.lblOperation = new System.Windows.Forms.Label();
             this.lblPath = new System.Windows.Forms.Label();
@@ -66,6 +71,7 @@ namespace crytec
             this.linkReveal = new System.Windows.Forms.LinkLabel();
             this.checkBox1 = new System.Windows.Forms.CheckBox();
             this.button1 = new crytec.FlatButton();
+            this.badgeProgress = new crytec.StatusBadge();
             this.panelProgress = new crytec.CardPanel();
             this.lblProgressOperation = new System.Windows.Forms.Label();
             this.lblProgressPath = new System.Windows.Forms.Label();
@@ -78,8 +84,10 @@ namespace crytec
             this.panelProgress.SuspendLayout();
             this.SuspendLayout();
 
+
             // ==================== Karte: Eingabe =========================
             this.panelCard.BackColor = System.Drawing.Color.White;
+            this.panelCard.Controls.Add(this.badgeOperation);
             this.panelCard.Controls.Add(this.button1);
             this.panelCard.Controls.Add(this.linkReveal);
             this.panelCard.Controls.Add(this.textBox1);
@@ -95,11 +103,17 @@ namespace crytec
 
             this.lblOperation.AutoSize = false;
             this.lblOperation.BackColor = System.Drawing.Color.Transparent;
-            this.lblOperation.Font = new System.Drawing.Font(crytec.Theme.Family, 15F);
+            this.badgeOperation.Location = new System.Drawing.Point(CardInner, BadgeTop);
+            this.badgeOperation.Name = "badgeOperation";
+            this.badgeOperation.Size = new System.Drawing.Size(BadgeSize, BadgeSize);
+            this.badgeOperation.TabIndex = 8;
+            this.badgeOperation.TabStop = false;
+
+            this.lblOperation.Font = new System.Drawing.Font(crytec.Theme.Family, 20F);
             this.lblOperation.ForeColor = System.Drawing.Color.FromArgb(26, 26, 26);
-            this.lblOperation.Location = new System.Drawing.Point(CardInner, TitleTop);
+            this.lblOperation.Location = new System.Drawing.Point(TitleLeft, TitleTop);
             this.lblOperation.Name = "lblOperation";
-            this.lblOperation.Size = new System.Drawing.Size(ContentWidth, 28);
+            this.lblOperation.Size = new System.Drawing.Size(TitleWidth, 32);
             this.lblOperation.TabIndex = 0;
             this.lblOperation.Text = "Verschlüsseln";
 
@@ -110,9 +124,9 @@ namespace crytec
             this.lblPath.BackColor = System.Drawing.Color.Transparent;
             this.lblPath.Font = new System.Drawing.Font(crytec.Theme.Family, 9.75F);
             this.lblPath.ForeColor = System.Drawing.Color.FromArgb(70, 70, 70);
-            this.lblPath.Location = new System.Drawing.Point(CardInner, PathTop);
+            this.lblPath.Location = new System.Drawing.Point(TitleLeft, PathTop);
             this.lblPath.Name = "lblPath";
-            this.lblPath.Size = new System.Drawing.Size(ContentWidth, 20);
+            this.lblPath.Size = new System.Drawing.Size(TitleWidth, 20);
             this.lblPath.TabIndex = 1;
             this.lblPath.Text = "";
 
@@ -121,9 +135,9 @@ namespace crytec
             this.lblAlgorithm.BackColor = System.Drawing.Color.Transparent;
             this.lblAlgorithm.Font = new System.Drawing.Font(crytec.Theme.Family, 8.25F);
             this.lblAlgorithm.ForeColor = System.Drawing.Color.FromArgb(110, 110, 110);
-            this.lblAlgorithm.Location = new System.Drawing.Point(CardInner, AlgoTop);
+            this.lblAlgorithm.Location = new System.Drawing.Point(TitleLeft, AlgoTop);
             this.lblAlgorithm.Name = "lblAlgorithm";
-            this.lblAlgorithm.Size = new System.Drawing.Size(ContentWidth, 18);
+            this.lblAlgorithm.Size = new System.Drawing.Size(TitleWidth, 18);
             this.lblAlgorithm.TabIndex = 2;
             this.lblAlgorithm.Text = "";
 
@@ -186,6 +200,7 @@ namespace crytec
             // diese waehrend eines Ordnerlaufs aus, dadurch springt das Fenster
             // nicht und seine Hoehe bleibt unveraendert.
             this.panelProgress.BackColor = System.Drawing.Color.White;
+            this.panelProgress.Controls.Add(this.badgeProgress);
             this.panelProgress.Controls.Add(this.button2);
             this.panelProgress.Controls.Add(this.progressBar1);
             this.panelProgress.Controls.Add(this.lblProgress);
@@ -203,11 +218,17 @@ namespace crytec
             // Datei bzw. welcher Ordner bearbeitet wird.
             this.lblProgressOperation.AutoSize = false;
             this.lblProgressOperation.BackColor = System.Drawing.Color.Transparent;
-            this.lblProgressOperation.Font = new System.Drawing.Font(crytec.Theme.Family, 15F);
+            this.badgeProgress.Location = new System.Drawing.Point(CardInner, BadgeTop);
+            this.badgeProgress.Name = "badgeProgress";
+            this.badgeProgress.Size = new System.Drawing.Size(BadgeSize, BadgeSize);
+            this.badgeProgress.TabIndex = 6;
+            this.badgeProgress.TabStop = false;
+
+            this.lblProgressOperation.Font = new System.Drawing.Font(crytec.Theme.Family, 20F);
             this.lblProgressOperation.ForeColor = System.Drawing.Color.FromArgb(26, 26, 26);
-            this.lblProgressOperation.Location = new System.Drawing.Point(CardInner, TitleTop);
+            this.lblProgressOperation.Location = new System.Drawing.Point(TitleLeft, TitleTop);
             this.lblProgressOperation.Name = "lblProgressOperation";
-            this.lblProgressOperation.Size = new System.Drawing.Size(ContentWidth, 28);
+            this.lblProgressOperation.Size = new System.Drawing.Size(TitleWidth, 32);
             this.lblProgressOperation.TabIndex = 0;
             this.lblProgressOperation.Text = "Wird verarbeitet";
 
@@ -216,9 +237,9 @@ namespace crytec
             this.lblProgressPath.BackColor = System.Drawing.Color.Transparent;
             this.lblProgressPath.Font = new System.Drawing.Font(crytec.Theme.Family, 9.75F);
             this.lblProgressPath.ForeColor = System.Drawing.Color.FromArgb(70, 70, 70);
-            this.lblProgressPath.Location = new System.Drawing.Point(CardInner, PathTop);
+            this.lblProgressPath.Location = new System.Drawing.Point(TitleLeft, PathTop);
             this.lblProgressPath.Name = "lblProgressPath";
-            this.lblProgressPath.Size = new System.Drawing.Size(ContentWidth, 20);
+            this.lblProgressPath.Size = new System.Drawing.Size(TitleWidth, 20);
             this.lblProgressPath.TabIndex = 1;
             this.lblProgressPath.Text = "";
 
@@ -227,17 +248,17 @@ namespace crytec
             this.lblProgressAlgorithm.BackColor = System.Drawing.Color.Transparent;
             this.lblProgressAlgorithm.Font = new System.Drawing.Font(crytec.Theme.Family, 8.25F);
             this.lblProgressAlgorithm.ForeColor = System.Drawing.Color.FromArgb(110, 110, 110);
-            this.lblProgressAlgorithm.Location = new System.Drawing.Point(CardInner, AlgoTop);
+            this.lblProgressAlgorithm.Location = new System.Drawing.Point(TitleLeft, AlgoTop);
             this.lblProgressAlgorithm.Name = "lblProgressAlgorithm";
-            this.lblProgressAlgorithm.Size = new System.Drawing.Size(ContentWidth, 18);
+            this.lblProgressAlgorithm.Size = new System.Drawing.Size(TitleWidth, 18);
             this.lblProgressAlgorithm.TabIndex = 2;
             this.lblProgressAlgorithm.Text = "";
 
             // An der Stelle des Passwortfelds: der Balken sitzt dort, wo sonst
             // die Eingabe waere, damit der Knopf seine Position behaelt.
-            this.progressBar1.Location = new System.Drawing.Point(CardInner, FieldTop + 11);
+            this.progressBar1.Location = new System.Drawing.Point(CardInner, FieldTop + 2);
             this.progressBar1.Name = "progressBar1";
-            this.progressBar1.Size = new System.Drawing.Size(ContentWidth, 8);
+            this.progressBar1.Size = new System.Drawing.Size(ContentWidth, 10);
             this.progressBar1.TabIndex = 3;
             this.progressBar1.Visible = true;
 
@@ -246,23 +267,83 @@ namespace crytec
             this.lblProgress.BackColor = System.Drawing.Color.Transparent;
             this.lblProgress.Font = new System.Drawing.Font(crytec.Theme.Family, 8.25F);
             this.lblProgress.ForeColor = System.Drawing.Color.FromArgb(110, 110, 110);
-            this.lblProgress.Location = new System.Drawing.Point(CardInner, FieldTop + 28);
+            this.lblProgress.Location = new System.Drawing.Point(CardInner, FieldTop + 20);
             this.lblProgress.Name = "lblProgress";
             this.lblProgress.Size = new System.Drawing.Size(ContentWidth, 18);
             this.lblProgress.TabIndex = 4;
             this.lblProgress.Text = "";
 
-            // Rechtsbuendig neben dem Text, auf der Hoehe des Eingabefelds -
-            // so ist der Knopf an derselben Stelle erreichbar wie beim Start.
+            // Volle Breite wie der Aktionsknopf - auch als "Fertig" gross genug.
+            // (ersetzt die fruehere rechtsbuendige Kleinvariante).
             this.button2.IsPrimary = false;
-            this.button2.Location = new System.Drawing.Point(CardInner + ContentWidth - 120, FieldTop);
+            this.button2.Location = new System.Drawing.Point(CardInner, ActionTop);
             this.button2.Name = "button2";
-            this.button2.Size = new System.Drawing.Size(120, 28);
+            this.button2.Size = new System.Drawing.Size(ContentWidth, ActionHeight);
             this.button2.TabIndex = 5;
             this.button2.Text = "Abbrechen";
             this.button2.Font = new System.Drawing.Font(crytec.Theme.Family, 9F);
             this.button2.Visible = true;
             this.button2.Click += new System.EventHandler(this.button2_Click);
+
+            // ==================== Karte: Ergebnis ========================
+            // Ersetzt die frueheren MessageBox-Zusammenfassungen: Plakette und
+            // Titel im gleichen Kopf wie die anderen Karten, darunter ein
+            // scrollbares Detailfeld und ein Aktionsknopf. "Schliessen" beendet
+            // das Programm, "Zurueck" kehrt zur Eingabe zurueck (z. B. nach
+            // falschem Passwort, damit kein Neustart noetig ist).
+            this.panelResult = new crytec.CardPanel();
+            this.badgeResult = new crytec.StatusBadge();
+            this.lblResultTitle = new System.Windows.Forms.Label();
+            this.txtResultDetail = new System.Windows.Forms.TextBox();
+            this.button3 = new crytec.FlatButton();
+            this.panelResult.SuspendLayout();
+            this.panelResult.Controls.Add(this.badgeResult);
+            this.panelResult.Controls.Add(this.button3);
+            this.panelResult.Controls.Add(this.txtResultDetail);
+            this.panelResult.Controls.Add(this.lblResultTitle);
+            this.panelResult.Location = new System.Drawing.Point(OuterMargin, OuterMargin);
+            this.panelResult.Name = "panelResult";
+            this.panelResult.Size = new System.Drawing.Size(CardWidth, CardHeight);
+            this.panelResult.TabIndex = 2;
+            this.panelResult.Visible = false;
+
+            this.badgeResult.Location = new System.Drawing.Point(CardInner, BadgeTop);
+            this.badgeResult.Name = "badgeResult";
+            this.badgeResult.Size = new System.Drawing.Size(BadgeSize, BadgeSize);
+            this.badgeResult.TabIndex = 0;
+            this.badgeResult.TabStop = false;
+
+            this.lblResultTitle.AutoSize = false;
+            this.lblResultTitle.BackColor = System.Drawing.Color.Transparent;
+            this.lblResultTitle.Font = new System.Drawing.Font(crytec.Theme.Family, 20F);
+            this.lblResultTitle.ForeColor = System.Drawing.Color.FromArgb(26, 26, 26);
+            this.lblResultTitle.Location = new System.Drawing.Point(TitleLeft, TitleTop);
+            this.lblResultTitle.Name = "lblResultTitle";
+            this.lblResultTitle.Size = new System.Drawing.Size(TitleWidth, 32);
+            this.lblResultTitle.TabIndex = 1;
+            this.lblResultTitle.Text = "Fertig";
+
+            this.txtResultDetail.BackColor = System.Drawing.Color.White;
+            this.txtResultDetail.BorderStyle = System.Windows.Forms.BorderStyle.None;
+            this.txtResultDetail.Font = new System.Drawing.Font(crytec.Theme.Family, 9.75F);
+            this.txtResultDetail.Location = new System.Drawing.Point(CardInner, 100);
+            this.txtResultDetail.Multiline = true;
+            this.txtResultDetail.Name = "txtResultDetail";
+            this.txtResultDetail.ReadOnly = true;
+            this.txtResultDetail.ScrollBars = System.Windows.Forms.ScrollBars.Vertical;
+            this.txtResultDetail.Size = new System.Drawing.Size(ContentWidth, 80);
+            this.txtResultDetail.TabIndex = 2;
+            this.txtResultDetail.TabStop = false;
+            this.txtResultDetail.Text = "";
+
+            this.button3.IsPrimary = true;
+            this.button3.Location = new System.Drawing.Point(CardInner, 192);
+            this.button3.Name = "button3";
+            this.button3.Size = new System.Drawing.Size(ContentWidth, 42);
+            this.button3.TabIndex = 3;
+            this.button3.Text = "Schließen";
+            this.button3.Font = new System.Drawing.Font(crytec.Theme.Family, 10.5F);
+            this.button3.Click += new System.EventHandler(this.button3_Click);
 
             // ==================== Fusszeile ==============================
             this.lblFooter.AutoSize = false;
@@ -281,6 +362,7 @@ namespace crytec
             this.ClientSize = new System.Drawing.Size(CardWidth + 2 * OuterMargin,
                                                      OuterMargin + CardHeight + 8 + 18 + 10);
             this.Controls.Add(this.lblFooter);
+            this.Controls.Add(this.panelResult);
             this.Controls.Add(this.panelProgress);
             this.Controls.Add(this.panelCard);
             this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedSingle;
@@ -296,6 +378,8 @@ namespace crytec
             this.panelCard.PerformLayout();
             this.panelProgress.ResumeLayout(false);
             this.panelProgress.PerformLayout();
+            this.panelResult.ResumeLayout(false);
+            this.panelResult.PerformLayout();
             this.ResumeLayout(false);
             this.PerformLayout();
         }
@@ -311,6 +395,7 @@ namespace crytec
         private System.Windows.Forms.LinkLabel linkReveal;
         private System.Windows.Forms.CheckBox checkBox1;
         private crytec.FlatButton button1;
+        private crytec.StatusBadge badgeOperation;
 
         private crytec.CardPanel panelProgress;
         private System.Windows.Forms.Label lblProgressOperation;
@@ -319,6 +404,13 @@ namespace crytec
         private System.Windows.Forms.Label lblProgress;
         private crytec.RoundedProgressBar progressBar1;
         private crytec.FlatButton button2;
+        private crytec.StatusBadge badgeProgress;
+
+        private crytec.CardPanel panelResult;
+        private crytec.StatusBadge badgeResult;
+        private System.Windows.Forms.Label lblResultTitle;
+        private System.Windows.Forms.TextBox txtResultDetail;
+        private crytec.FlatButton button3;
 
         private System.Windows.Forms.Label lblFooter;
     }

@@ -6,6 +6,18 @@
 
 Ein schlankes Windows-Tool zum Ver- und Entschlüsseln von Dateien und Ordnern direkt per **Rechtsklick** im Windows Explorer.
 
+## 📸 Screenshots
+
+| Verschlüsseln | Entschlüsseln |
+|---|---|
+| ![Passwortdialog Verschlüsseln](docs/screenshots/dialog-verschluesseln.png) | ![Passwortdialog Entschlüsseln](docs/screenshots/dialog-entschluesseln.png) |
+
+| Fehlermeldung | Schnellansicht („Fertig"-Karte) |
+|---|---|
+| ![Fehlermeldung im Fluent-Stil](docs/screenshots/dialog-fehler.png) | ![Fertig-Karte der Schnellansicht](docs/screenshots/dialog-fertig.png) |
+
+Dunkles Design (Windows Dark Mode) — im hellen Modus kehren sich die Flächen um. Alle Dialoge (auch Fehler, Zusammenfassungen und der Installer-Hinweis) nutzen denselben Fluent-Stil.
+
 ---
 
 ## ✨ Features
@@ -18,7 +30,9 @@ Ein schlankes Windows-Tool zum Ver- und Entschlüsseln von Dateien und Ordnern d
 - 🚫 Bestehende Dateien werden nie ungefragt überschrieben
 - 📊 Ordner-Verschlüsselung mit Fortschrittsbalken und **Abbrechen**-Schaltfläche
 - 💾 Geringer Speicherbedarf — auch sehr große Dateien und Altformate sind kein Problem
-- 👁️ Quick-Edit: Datei temporär entschlüsseln, anzeigen und automatisch wieder löschen
+- 👁️ Quick-Edit: Datei temporär entschlüsseln, anzeigen und automatisch wieder löschen (mit „Fertig"-Bestätigung, wenn der Viewer nicht verfolgbar ist)
+- ⌨️ Passwortfeld mit Maskierung, Enter-Bestätigung und Anzeige-Schalter
+- 🪟 Alle Dialoge im Fluent-Stil mit Ergebnis-Karte statt Popup-Flut
 - 📦 Kein Admin nötig — per-User Installation ohne UAC
 - 🔄 Rückwärtskompatibel mit Dateien aus den Versionen 3.0, 2.0 und 1.0
 - ⬆️ Ordner-Entschlüsseln bringt Altdateien automatisch auf das aktuelle Format
@@ -64,7 +78,7 @@ msbuild File_crypt/File_crypt.sln /p:Configuration=Release /p:Platform=x86
 File_crypt\Tests\PolyAES.Tests\bin\Release\PolyAES.Tests.exe
 ```
 
-Exit-Code `0` = alles grün. 142 Prüfungen: Round-Trips über Block- und Puffergrenzen,
+Exit-Code `0` = alles grün. 148 Prüfungen: Round-Trips über Block- und Puffergrenzen,
 Manipulationserkennung (Bitfehler in Ciphertext/Salt/IV/Signatur, vertauschte Blöcke,
 Kürzen, Anhängen), **getrennte Chiffrier-/Signaturschlüssel**, Rückwärtskompatibilität
 mit v3, v2 und v1, Abbruchverhalten, atomare Schreibvorgänge sowie ein Test, der
@@ -76,10 +90,12 @@ Zusätzlich prüft ein End-to-End-Lauf die **echte EXE im Fenster** (31 Prüfung
 .\File_crypt\Tests\e2e\Invoke-PrivateCryptTests.ps1
 ```
 
-> Die E2E-Suite bedient das Fenster über **Windows UI Automation**. Auf
-> Systemen ohne `UIAccessBroker` (hier: Build 26200, Dienst nicht vorhanden)
-> kann sie den Passwortwert nicht ins Feld schreiben — dort schlägt der Lauf
-> fehl, ohne dass das Programm defekt ist. Siehe „Zwei Fallstricke" unten.
+> Die E2E-Suite bedient das Fenster über **Windows UI Automation** und läuft
+> hier grün (31/31). Findet sie auf einem anderen System das Passwortfeld per
+> `ValuePattern` nicht, erst per Tastatur gegenprüfen (`SendKeys` + Enter
+> funktioniert immer): Ein Fenster mit nur Standard-WinForms-Elementen lieferte
+> dort ebenfalls keine Kinder — dann liegt es an der UIA-Bridge des Systems,
+> nicht am Programm. Details unter „Zwei Fallstricke" weiter unten.
 
 **Ausführliche Übersicht, was abgedeckt ist und was nicht:**
 [docs/TESTING.md](docs/TESTING.md)
@@ -190,7 +206,7 @@ New-ItemProperty -Path "$p\shell\open\command" -Name "(default)" -Value ('"'+$ex
 $u = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\privateCrypt"
 New-Item -Path $u -Force | Out-Null
 New-ItemProperty -Path $u -Name "DisplayName"     -Value "privateCrypt"                -PropertyType String -Force
-New-ItemProperty -Path $u -Name "DisplayVersion"  -Value "4.0"                          -PropertyType String -Force
+New-ItemProperty -Path $u -Name "DisplayVersion"  -Value "4.1"                          -PropertyType String -Force
 New-ItemProperty -Path $u -Name "Publisher"       -Value "mundi86"                      -PropertyType String -Force
 New-ItemProperty -Path $u -Name "DisplayIcon"     -Value ('"'+$exe+'",0')              -PropertyType String -Force
 New-ItemProperty -Path $u -Name "UninstallString" -Value ('"'+$exe+'" /uninstall')     -PropertyType String -Force
@@ -242,7 +258,7 @@ public class Sh {
 2. Rechtsklick auf `.protected` → Passwort eingeben
 3. Die **Quick-Edit Checkbox ist automatisch aktiviert** → Enter
 4. Bild öffnet sich im Viewer
-5. Viewer schließen → App beendet sich, Temp-Datei wird gelöscht
+5. Viewer schließen → App beendet sich, Temp-Datei wird gelöscht (bei nicht verfolgbarem Viewer erscheint eine „Fertig"-Karte)
 
 ### ✅ Ordner verschlüsseln
 1. Ordner mit mehreren Dateien anlegen
@@ -257,7 +273,7 @@ public class Sh {
 
 ### ✅ Apps & Features prüfen
 - Windows-Taste → „Apps" → nach „privateCrypt" suchen
-- Eintrag mit Version 4.0 sollte erscheinen
+- Eintrag mit Version 4.1 sollte erscheinen
 
 ### ✅ Installation prüfen, ohne den Explorer zu bemühen
 
@@ -270,7 +286,7 @@ Get-Item "$env:LOCALAPPDATA\privateCrypt\privateCrypt.exe" |
   Select-Object @{n='Version';e={$_.VersionInfo.FileVersion}}
 ```
 
-Erwartet: `4.0.0.0`. Steht dort noch eine andere Version, testest du die alte.
+Erwartet: `4.1.0.0`. Steht dort noch eine andere Version, testest du die alte.
 
 Für die Registry-Pfade hilft ein Blick auf die Kommandos:
 
@@ -380,11 +396,11 @@ nicht über das Menü, sondern direkt:
 
 Im Fenster selbst erkennbar an der Beschriftung über dem Passwortfeld:
 
-| | Version 2.0 | Version 3.0 | Version 4.0 |
-|---|---|---|---|
-| Beschriftung | `crypt with -> PolyAES256` | `Verschlüsseln → AES-256-CBC + HMAC-SHA256` | `AES-256-CBC + HMAC-SHA256 · neues Format PCv4` |
-| Fenster | schmal | 400 px breit | 520 px, Karte mit Passwortfeld und Hinweiszeile |
-| Container | `PCv2` | `PCv3` | `PCv4` |
+| | Version 2.0 | Version 3.0 | Version 4.0 | Version 4.1 |
+|---|---|---|---|---|
+| Beschriftung | `crypt with -> PolyAES256` | `Verschlüsseln → AES-256-CBC + HMAC-SHA256` | `AES-256-CBC + HMAC-SHA256 · neues Format PCv4` | wie 4.0 |
+| Fenster | schmal | 400 px breit | 520 px, Karte mit Passwortfeld und Hinweiszeile | 520 px, Karte mit Plakette + 20-pt-Titel |
+| Container | `PCv2` | `PCv3` | `PCv4` | `PCv4` (unverändert) |
 
 **Abhilfe:** einmalig die neue Version installieren (siehe Schritt 3), oder
 die Tests direkt über die Kommandozeile starten und das Kontextmenü meiden:
@@ -455,6 +471,19 @@ Entfernt: Kontextmenü-Einträge, Dateizuordnung, installierte EXE, Uninstall-Ei
 ---
 
 ## 📋 Verwendung im Detail
+
+```mermaid
+flowchart TD
+    R["🖱️ Rechtsklick im Explorer"] --> D{"Datei oder Ordner?"}
+    D -->|"Datei"| P["🔑 Passwortdialog"]
+    D -->|"Ordner"| F["📊 Fortschrittsdialog<br/>(jederzeit abbrechbar)"]
+    P --> M{"Modus"}
+    M -->|"Verschlüsseln"| E["📦 PCv4 schreiben<br/>Original sicher löschen"]
+    M -->|"Entschlüsseln"| S{"Quick-Edit?"}
+    S -->|"Ja"| Q["👁️ Temporär entschlüsseln<br/>Viewer öffnen<br/>danach sicher löschen"]
+    S -->|"Nein"| O["📄 Datei wiederherstellen"]
+    F --> U["⬆️ Altformate → PCv4-Upgrade<br/>im selben Durchgang"]
+```
 
 ### Datei verschlüsseln
 Rechtsklick auf eine Datei → **Ver- | Entschlüsseln (AES256)** → Passwort eingeben → Enter
@@ -539,6 +568,22 @@ privateCrypt.exe "<Datei oder Ordner>" [e|d]
 ```
 [PCv4 4 B] [Salt 32 B] [IV 16 B] [Ciphertext ...] [HMAC-SHA256 32 B]
 ```
+```mermaid
+flowchart LR
+    PW["🔑 Passwort"] --> KDF["PBKDF2-SHA256<br/>300.000 Iterationen"]
+    SALT["🧂 Salt<br/>32 B, pro Datei neu"] --> KDF
+    KDF --> MK["Masterschlüssel<br/>64 B (nur im RAM)"]
+    MK --> KE["🔒 Chiffrierschlüssel<br/>HMAC aus 1. Hälfte, domain-separiert"]
+    MK --> KS["✍️ Signaturschlüssel<br/>HMAC aus 2. Hälfte, domain-separiert"]
+    KE --> ENC["AES-256-CBC, IV 16 B"]
+    ENC --> CT["Ciphertext"]
+    CT --> MAC["HMAC-SHA256<br/>über Magic + Salt + IV + Ciphertext"]
+    MAC --> TAG["Tag 32 B"]
+    SALT --> CONT["📦 Container: PCv4 · Salt · IV · Ciphertext · Tag"]
+    CT --> CONT
+    TAG --> CONT
+```
+
 Die Signatur wird **geprüft, bevor** überhaupt Klartext entsteht. Ein falsches Passwort und
 eine manipulierte Datei führen bewusst zur selben Meldung.
 
@@ -583,7 +628,8 @@ File_crypt/
 │   ├── Theme.cs                 Farben, Schriften, Metrik (Hell/Dunkel)
 │   ├── ModernControls.cs        Karte, Passwortfeld, Flächenknopf, Fortschrittsbalken
 │   ├── cConfig.cs               Kontextmenü + Dateizuordnung (HKCU)
-│   ├── Form1.cs / .Designer.cs  Oberfläche und Ablaufsteuerung
+│   ├── Form1.cs / .Designer.cs  Oberfläche, Ablaufsteuerung, Ergebnis-Karte
+│   ├── FluentMessageBox.cs        Themen-Dialoge statt MessageBox (Hell/Dunkel)
 │   ├── Program.cs               Einstiegspunkt
 │   └── app.manifest             DPI, Common Controls v6, asInvoker
 └── Tests/
@@ -599,6 +645,7 @@ File_crypt/
         └── Invoke-PrivateCryptTests.ps1   End-to-End gegen die echte EXE
 installer/privateCrypt.iss       Inno Setup Installer
 docs/MIGRATION.md               Anleitung für Dateien aus v1/v2/v3
+docs/screenshots/               Dialoge als PNG (README-Einbindung)
 docs/TESTING.md                 Teststrategie, was abgedeckt ist und was nicht
 ```
 
@@ -616,10 +663,10 @@ Die Version steht in **vier** Dateien und muss überall gleich sein:
 
 | Datei | Ort | Wert |
 |---|---|---|
-| `File_crypt/File_crypt/Properties/AssemblyInfo.cs` | `AssemblyVersion`, `AssemblyFileVersion` | `4.0.0.0` |
-| `File_crypt/File_crypt/app.manifest` | `assemblyIdentity/@version` | `4.0.0.0` |
-| `File_crypt/File_crypt/cConfig.cs` | `AppVersion` (Uninstall-Eintrag) | `4.0` |
-| `installer/privateCrypt.iss` | `AppVersion` | `4.0` |
+| `File_crypt/File_crypt/Properties/AssemblyInfo.cs` | `AssemblyVersion`, `AssemblyFileVersion` | `4.1.0.0` |
+| `File_crypt/File_crypt/app.manifest` | `assemblyIdentity/@version` | `4.1.0.0` |
+| `File_crypt/File_crypt/cConfig.cs` | `AppVersion` (Uninstall-Eintrag) | `4.1` |
+| `installer/privateCrypt.iss` | `AppVersion` | `4.1` |
 
 Das ist nicht nur Kosmetik: wer nur in die Dateieigenschaften der EXE
 schaut, erkennt sonst nicht, welche Version läuft. Genau das ist beim

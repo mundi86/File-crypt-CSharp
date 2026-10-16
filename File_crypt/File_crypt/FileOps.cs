@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Diagnostics;
+using System.Threading;
+using Microsoft.Win32;
 
 namespace crytec
 {
@@ -226,6 +229,94 @@ namespace crytec
             }
 
             return !File.Exists(path);
+        }
+
+        /// <summary>
+        /// Prueft, ob ein gestarteter Betrachter ueberwacht werden kann.
+        ///
+        /// <para>Wartet hoechstens <paramref name="graceMs"/> Millisekunden: Laeuft der
+        /// Prozess danach noch, gilt er als ueberwachbar (<c>true</c>) und der Aufrufer
+        /// kann auf sein Ende warten. Endet er innerhalb der Karenzzeit oder gibt es
+        /// gar keinen Prozess (<c>null</c>, z. B. ShellExecute ohne Handle), kommt
+        /// <c>false</c> zurueck - dann darf die geoeffnete Datei noch nicht geloescht
+        /// werden, weil der Betrachter (etwa die Fotos-App, deren Starter-Stub sofort
+        /// endet) sie moeglicherweise gerade erst laedt.</para>
+        /// </summary>
+        internal static bool IsViewerTrackable(Process viewer, int graceMs, CancellationToken token)
+        {
+            if (viewer == null)
+                return false;
+
+            try
+            {
+                if (viewer.WaitForExit(graceMs))
+                    return false;
+
+                token.ThrowIfCancellationRequested();
+                return true;
+            }
+            catch (InvalidOperationException)
+            {
+                // Kein Prozess-Handle (ShellExecute ohne neues Prozessobjekt).
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Prueft konservativ, ob Windows die Endung einer App zuordnen kann.
+        ///
+        /// <para>Gibt <c>true</c> nur bei positivem Nachweis zurueck (ProgId mit
+        /// Oeffnen-Befehl, Benutzerwahl oder SystemFileAssociations). UWP-Apps
+        /// wie Fotos registrieren keinen klassischen Befehl, oeffnen aber
+        /// trotzdem - deshalb zaehlt auch ein blosser
+        /// <c>shell\open</c>-Schluessel. Im Zweifel kommt <c>false</c>: Der
+        /// Aufrufer wartet dann auf "Fertig", statt die Temporaerdatei
+        /// moeglicherweise zu frueh zu loeschen (z. B. waehrend noch die
+        /// "Oeffnen mit"-Auswahl offen ist).</para>
+        /// </summary>
+        internal static bool HasAssociatedApp(string extension)
+        {
+            if (string.IsNullOrEmpty(extension))
+                return false;
+
+            try
+            {
+                using (RegistryKey ext = Registry.ClassesRoot.OpenSubKey(extension))
+                {
+                    string progId = ext == null ? null : ext.GetValue(null) as string;
+                    if (!string.IsNullOrEmpty(progId))
+                    {
+                        using (RegistryKey command = Registry.ClassesRoot.OpenSubKey(progId + @"\shell\open\command"))
+                            if (command != null)
+                                return true;
+
+                        using (RegistryKey open = Registry.ClassesRoot.OpenSubKey(progId + @"\shell\open"))
+                            if (open != null)
+                                return true;
+                    }
+                }
+
+                using (RegistryKey choice = Registry.CurrentUser.OpenSubKey(
+                    @"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\" + extension + @"\UserChoice"))
+                {
+                    string chosen = choice == null ? null : choice.GetValue("ProgId") as string;
+                    if (!string.IsNullOrEmpty(chosen))
+                        return true;
+                }
+
+                using (RegistryKey sys = Registry.ClassesRoot.OpenSubKey(
+                    @"SystemFileAssociations\" + extension + @"\shell\open\command"))
+                {
+                    if (sys != null)
+                        return true;
+                }
+            }
+            catch
+            {
+                // Ohne Auskunft gilt: keine Zuordnung - der sichere Weg.
+            }
+
+            return false;
         }
 
         /// <summary>Macht aus einem absoluten Pfad einen Pfad relativ zu einem Wurzelordner.</summary>

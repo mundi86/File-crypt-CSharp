@@ -7,7 +7,7 @@
 ; The compiled setup will be placed in:  ..\dist\privateCrypt_Setup.exe
 
 #define AppName      "privateCrypt"
-#define AppVersion   "4.0"
+#define AppVersion   "4.1"
 #define AppPublisher "mundi86"
 #define AppExeName   "privateCrypt.exe"
 

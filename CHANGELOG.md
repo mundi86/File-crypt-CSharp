@@ -2,6 +2,49 @@
 
 All notable changes to privateCrypt are documented here.
 
+## [4.1.0] - 2026-10-16
+
+### Fixed
+
+- **Quick-Edit deleted image previews before they opened.** Images were launched
+  via `rundll32.exe shimgvw.dll,ImageView_Fullscreen`, which on Windows 10/11
+  usually exits immediately and silently for `jpg`/`png` (Photo Viewer is only
+  registered for `tif`/`tiff` there). Files with an uppercase extension such as
+  `.JPG` never even reached that branch because the comparison was
+  case-sensitive. In both cases the viewer was already gone, so the temporary
+  file was securely deleted before the picture ever appeared. Images now open
+  with the associated default app like every other file type, the extension
+  check is case-insensitive, and when the viewer cannot be tracked (its process
+  ends within a 3 s grace period or yields no handle, e.g. the Photos UWP
+  stub), the temporary file is kept until the user clicks "Fertig" or closes
+  the window - only then is it securely deleted.
+- **Password field was never masked and Enter did nothing.** The reveal toggle
+  only ever switched between two unmasked states because `PasswordChar` was
+  never initialized, so every password stood on screen in clear text; the
+  `KeyDown`, `Enter` and `Leave` handlers existed but were never subscribed,
+  so Enter did not submit and a revealed password was never hidden again on
+  leaving the field. Masking is now the default, Enter submits, and leaving
+  the field re-hides a revealed password.
+- **Unassociated file types could lose their preview.** When Quick-Edit opened
+  a type with no registered app, the "Open with" picker kept the tracked
+  viewer process alive while the chosen app outlived the wait, so the
+  temporary file could be deleted mid-view. `FileOps.HasAssociatedApp`
+  conservatively detects a registered handler (ProgId command, user choice,
+  system associations, UWP open keys); without one, Quick-Edit goes straight
+  to the "Fertig" confirmation instead of relying on process tracking.
+
+### Changed
+
+- **Refined Fluent interface (input, progress, result).** All cards share a
+  header with a vector-drawn status badge (lock, shield, check, warning,
+  error, info), a 20 pt headline and stronger card contrast in both themes.
+  Quick-Edit confirmation ("Fertig") lives on a dedicated result card with
+  scrollable details instead of a repurposed progress view. All dialogs
+  (summaries, errors, hints, installer, crash handler) render through the
+  new themed `FluentMessageBox`, so dark mode and typography stay consistent
+  everywhere - summaries deliberately stay modal so they cannot be missed.
+  Keyboard users get a visible focus ring on buttons.
+
 ## [4.0.0] - 2026
 
 Fixes a cryptographic defect in 3.0, closes two data-loss paths, and rebuilds the

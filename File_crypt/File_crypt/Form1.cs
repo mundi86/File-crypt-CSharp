@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Win32;
+using MessageBox = crytec.FluentMessageBox;
 
 namespace crytec
 {
@@ -40,6 +41,7 @@ namespace crytec
 
         private CancellationTokenSource _cts;
         private bool _busy;
+        private bool _resultExit;
 
         /// <summary>
         /// Zeigt den vollen Dateinamen an, wenn die Beschriftung ihn kappt.
@@ -80,6 +82,14 @@ namespace crytec
             this.AutoScaleDimensions = MeasureFontBaseline();
 
             ApplyThemeToControls();
+
+            // Passwortfeld verdrahten: Enter loest aus, Verlassen verdeckt ein
+            // eingeblendetes Passwort wieder, und maskiert ist Standard -
+            // ohne SetRevealed(false) stuende das Passwort im Klartext da.
+            textBox1.KeyDown += new KeyEventHandler(textBox1_KeyDown);
+            textBox1.Enter += new EventHandler(textBox1_Enter);
+            textBox1.Leave += new EventHandler(textBox1_Leave);
+            textBox1.SetRevealed(false);
 
             // Symbol direkt aus der ausgefuehrten Datei, damit Titelleiste und
             // Taskleiste es anzeigen.
@@ -194,6 +204,9 @@ namespace crytec
                 Close();
                 return;
             }
+
+            badgeOperation.Kind = _encryptMode ? BadgeKind.Lock : BadgeKind.Shield;
+            badgeProgress.Kind = badgeOperation.Kind;
 
             _ready = true;
 
@@ -379,6 +392,44 @@ namespace crytec
         private void button1_Click(object sender, EventArgs e)
         {
             StartOperation();
+        }
+
+        /// <summary>
+        /// Zeigt die Ergebnis-Karte anstelle eines MessageBox-Dialogs.
+        ///
+        /// <para>Plakette und Titel nennen das Ergebnis auf einen Blick, das
+        /// Detailfeld listet Zahlen und Dateinamen scrollbar auf. Je nach
+        /// <paramref name="exitAfterOk"/> beendet der Knopf das Programm
+        /// ("Schliessen") oder kehrt zur Eingabe zurueck ("Zurueck") - etwa
+        /// nach falschem Passwort, wo ein Neustart inklusive
+        /// Schluesselableitung reine Zeitverschwendung waere.</para>
+        /// </summary>
+        private void ShowResult(BadgeKind kind, string title, string detail, string okText, bool exitAfterOk)
+        {
+            badgeResult.Kind = kind;
+            lblResultTitle.Text = title;
+            txtResultDetail.Text = detail ?? "";
+            button3.Text = okText;
+            _resultExit = exitAfterOk;
+
+            panelProgress.Visible = false;
+            panelCard.Visible = false;
+            panelResult.Visible = true;
+            lblFooter.Text = "";
+            button3.Focus();
+        }
+
+        private void button3_Click(object sender, EventArgs e)
+        {
+            if (_resultExit)
+            {
+                Application.Exit();
+                return;
+            }
+
+            panelResult.Visible = false;
+            panelCard.Visible = true;
+            textBox1.Focus();
         }
 
         private void button2_Click(object sender, EventArgs e)
@@ -776,7 +827,9 @@ namespace crytec
                 viewer = LaunchViewer(tempFile, extension);
 
                 if (viewer != null)
-                    await Task.Run(() => WaitForViewer(viewer, token), token);
+                    await WaitForViewerTrackedAsync(viewer, progress, token, !FileOps.HasAssociatedApp(extension));
+                else
+                    await WaitForViewerTrackedAsync(null, progress, token, true);
             }
             catch (OperationCanceledException)
             {
@@ -804,24 +857,80 @@ namespace crytec
         }
 
         /// <summary>
-        /// Startet den Betrachter. Gibt <c>null</c> zurueck, wenn kein Programm
-        /// zugeordnet ist.
+        /// Karenzzeit und Betrachter-Erkennung fuer Quick-Edit (Details unten).
+        /// (LaunchViewer-Doku steht direkt an der Methode weiter unten.)
+        /// </summary>
+        /// <summary>
+        /// Naeheres zur Karenzzeit (ViewerGraceMs): siehe Doku an WaitForViewerTrackedAsync und
+        /// FileOps.IsViewerTrackable.
+        /// </summary>
+
+/// <summary>
+        /// Hinweis: Zweitblock zur selben Konstante - Details stehen im Block darueber.
+/// </summary>
+        private const int ViewerGraceMs = 3000;
+
+        /// <summary>
+        /// Wartet auf den Betrachter der Quick-Edit-Datei. Laeuft der Betrachter
+        /// nach der Karenzzeit noch, wird auf sein Ende gewartet und die Temporaer-
+        /// datei danach geloescht. Sonst - etwa bei der Fotos-App, deren Prozess
+        /// sofort endet - bleibt die Datei liegen, bis der Nutzer auf "Fertig"
+        /// klickt oder das Fenster schliesst; erst dann raeumt QuickEditAsync auf.
+        /// </summary>
+        private async Task WaitForViewerTrackedAsync(Process viewer, IProgress<ProgressState> progress, CancellationToken token, bool forceConfirm)
+        {
+            bool tracked = !forceConfirm && viewer != null
+                && await Task.Run(() => FileOps.IsViewerTrackable(viewer, ViewerGraceMs, token), token);
+
+            if (tracked)
+            {
+                await Task.Run(() => WaitForViewer(viewer, token), token);
+                return;
+            }
+
+            ShowResult(BadgeKind.Info, "Datei geöffnet",
+                "Nach dem Ansehen auf \"Fertig\" klicken - erst dann wird die Temporärdatei sicher gelöscht.",
+                "Fertig - Temporärdatei löschen", true);
+
+            button2.Enabled = true;
+
+            try { await Task.Delay(Timeout.Infinite, token); }
+            catch (OperationCanceledException)
+            {
+                // "Fertig" oder Fenster-X: das finally in QuickEditAsync raeumt auf.
+            }
+        }
+
+        /// <summary>
+        /// Startet den Betrachter ueber die zugeordnete Standard-App. Gibt
+        /// <c>null</c> zurueck, wenn kein Programm zugeordnet ist oder der
+        /// Start scheitert - dann wartet QuickEdit auf "Fertig", statt die
+        /// Temporaerdatei sofort zu loeschen.
         /// </summary>
         private static Process LaunchViewer(string file, string extension)
         {
             ProcessStartInfo startInfo;
 
-            // Bilder mit dem Windows-Bildbetrachter oeffnen: er beendet sich
-            // zuverlaessig, wenn das Fenster geschlossen wird.
-            if (extension == ".jpg" || extension == ".jpeg" || extension == ".bmp"
-                || extension == ".png" || extension == ".gif" || extension == ".tif"
-                || extension == ".tiff")
+            // Alle Dateien mit der zugeordneten Standard-App oeffnen (Fotos,
+            // Bildbetrachter, Editor …). Beide Zweige sind bewusst identisch: der
+            // fruehere rundll32/shimgvw-Sonderweg fuer Bilder endete ab Windows 10
+            // meist sofort und lautlos, und die Temporaerdatei wurde noch vor dem
+            // Ansehen geloescht. Die Endungspruefung bleibt als Dokumentation, welche
+            // Dateitypen betroffen waren; der Vergleich ist zur Sicherheit
+            // case-insensitiv.
+            if (string.Equals(extension, ".jpg", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(extension, ".jpeg", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(extension, ".bmp", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(extension, ".png", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(extension, ".gif", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(extension, ".tif", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(extension, ".tiff", StringComparison.OrdinalIgnoreCase))
             {
                 startInfo = new ProcessStartInfo
                 {
-                    FileName = "rundll32.exe",
-                    Arguments = "C:\\Windows\\System32\\shimgvw.dll,ImageView_Fullscreen \"" + file + "\"",
-                    UseShellExecute = false,
+                    FileName = file,
+                    // Ehemals rundll32/shimgvw - entfernt, siehe Kommentar oben.
+                    UseShellExecute = true,
                     ErrorDialog = false
                 };
             }
@@ -977,6 +1086,7 @@ namespace crytec
             UseWaitCursor = busy;
 
             panelProgress.Visible = busy && showProgress;
+            panelResult.Visible = false;
             panelCard.Visible = !(busy && showProgress);
 
             if (busy)
@@ -1067,6 +1177,20 @@ namespace crytec
 
             panelCard.BackColor = Theme.Card;
             panelProgress.BackColor = Theme.Card;
+            panelResult.BackColor = Theme.Card;
+
+            lblOperation.Font = Theme.FontHeadline;
+            lblProgressOperation.Font = Theme.FontHeadline;
+            lblResultTitle.Font = Theme.FontHeadline;
+            lblResultTitle.ForeColor = Theme.TextStrong;
+
+            txtResultDetail.BackColor = Theme.Card;
+            txtResultDetail.ForeColor = Theme.Text;
+
+            badgeOperation.Invalidate();
+            badgeProgress.Invalidate();
+            badgeResult.Invalidate();
+            button3.Invalidate();
 
             linkReveal.ForeColor = Theme.Accent;
             linkReveal.LinkColor = Theme.Accent;

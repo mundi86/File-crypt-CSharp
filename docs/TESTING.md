@@ -14,7 +14,7 @@ Prüfung ersetzt nichts davon — sie ist die letzte Instanz.
 
 ## 1. Unit-Tests
 
-Krypto-Schicht und Dateisystem-Helfer, 142 Prüfungen, bewusst als
+Krypto-Schicht und Dateisystem-Helfer, 148 Prüfungen, bewusst als
 Konsolen-Anwendung **ohne** NuGet und ohne Test-Framework — sonst
 scheitert der Lauf an Paket-Restore.
 
@@ -40,7 +40,7 @@ noch einmal zusammen.
 | Nebenläufigkeit | Ziel bleibt bei fehlgeschlagener Entschlüsselung unangetastet, keine `.pctmp`-Reste |
 | Überschreiben | `overwrite=false` lässt das Ziel unverändert, `true` ersetzt es |
 | **Abbruch** | `CancellationToken` meldet Abbruch, legt kein Ziel an, hinterlässt keine `.pctmp`-Reste und lässt ein bestehendes Ziel unverändert — für Verschlüsseln und Entschlüsseln |
-| `FileOps` | case-insensitive Endung, `Replace`-Falle, leere Namen, Junction-Erkennung, `.db`-Übersprung |
+| `FileOps` | case-insensitive Endung, `Replace`-Falle, leere Namen, Junction-Erkennung, `.db`-Uebersprung, Betrachter-Ueberwachung (Quick-Edit), Dateizuordnung |
 | **Rückwärtskompatibilität** | 6 feste v1-Vektoren, v2-Round-Trip, **v3 aus Version 3.0** (einschließlich Manipulation), Fehlermeldungen bei zu kurzen Dateien und ungerader Blockgröße |
 | **Speicherverbrauch** | 48-MB-Altdatei in v2 und im 2011-Format wird entschlüsselt, während der Working Set des Testprozesses beobachtet wird; er darf nicht mit der Dateigröße wachsen |
 

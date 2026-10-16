@@ -328,6 +328,14 @@ namespace crytec
         }
 
         /// <summary>Laesst den Inhalt kurz im Klartext stehen.</summary>
+        protected override AccessibleObject CreateAccessibilityInstance()
+        {
+            // Bewusst das Rahmen-Objekt: Die typisierte Variante
+            // (TextBoxAccessibleObject) ist internal. Die Rolle
+            // (Text, gesetzt im Konstruktor) meldet das Objekt selbst.
+            return base.CreateAccessibilityInstance();
+        }
+
         internal void SetRevealed(bool revealed)
         {
             Revealed = revealed;
@@ -346,6 +354,168 @@ namespace crytec
     /// Ausserdem ist ein Button mit <c>FlatStyle.Flat</c> ohne Zeichen mit
     /// Standardrahmen in dunkler Umgebung kaum sichtbar.</para>
     /// </summary>
+    /// <summary>Motiv der Symbolplakette in Kopfzeilen und Ergebnisansicht.</summary>
+    internal enum BadgeKind
+    {
+        /// <summary>Verschluesseln (Vorhaengeschloss).</summary>
+        Lock,
+        /// <summary>Entschluesseln / geschuetzt (Schild mit Haken).</summary>
+        Shield,
+        /// <summary>Erfolg (Haken).</summary>
+        Check,
+        /// <summary>Hinweis oder Abbruch (Dreieck).</summary>
+        Warning,
+        /// <summary>Fehler (Kreuz).</summary>
+        Error,
+        /// <summary>Neutrale Information (i).</summary>
+        Info
+    }
+
+    /// <summary>
+    /// Runde Symbolplakette: getoente Flaeche in der Statusfarbe, darin ein
+    /// vektor-gezeichnetes Symbol. Ersetzt Bilddateien und Icon-Fonts - beides
+    /// muesste sonst mit dem Installer verteilt und lizenziert werden.
+    /// </summary>
+    internal sealed class StatusBadge : Control
+    {
+        private BadgeKind _kind;
+
+        internal BadgeKind Kind
+        {
+            get { return _kind; }
+            set
+            {
+                if (_kind == value) return;
+                _kind = value;
+                AccessibleName = "Symbol: " + value.ToString();
+                Invalidate();
+            }
+        }
+
+        internal StatusBadge()
+        {
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer
+                     | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
+
+            TabStop = false;
+            Size = new System.Drawing.Size(44, 44);
+            AccessibleRole = AccessibleRole.Graphic;
+            AccessibleName = "Symbol: " + _kind.ToString();
+        }
+
+        private Color MainColor()
+        {
+            switch (_kind)
+            {
+                case BadgeKind.Lock: return Theme.Accent;
+                case BadgeKind.Shield: return Theme.Success;
+                case BadgeKind.Check: return Theme.Success;
+                case BadgeKind.Warning: return Theme.Warning;
+                case BadgeKind.Error: return Theme.Error;
+                default: return Theme.Accent;
+            }
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+
+            Color main = MainColor();
+            float cx = Width / 2F;
+            float cy = Height / 2F;
+            float r = Math.Min(Width, Height) / 2F - 2F;
+
+            using (var brush = new SolidBrush(Color.FromArgb(36, main)))
+            using (var ring = new Pen(Color.FromArgb(90, main), 1.5F))
+            {
+                g.FillEllipse(brush, cx - r, cy - r, r * 2F, r * 2F);
+                g.DrawEllipse(ring, cx - r, cy - r, r * 2F, r * 2F);
+            }
+
+            using (var pen = new Pen(main, 2.6F))
+            {
+                pen.StartCap = LineCap.Round;
+                pen.EndCap = LineCap.Round;
+                pen.LineJoin = LineJoin.Round;
+                DrawGlyph(g, pen, cx, cy);
+            }
+        }
+
+        private void DrawGlyph(Graphics g, Pen pen, float cx, float cy)
+        {
+            switch (_kind)
+            {
+                case BadgeKind.Lock:
+                    // Buegel.
+                    g.DrawArc(pen, cx - 6F, cy - 11F, 12F, 11F, 180F, 180F);
+                    // Koerper.
+                    using (var brush = new SolidBrush(pen.Color))
+                    using (GraphicsPath body = CardPanel.BuildRoundedPath(
+                        Rectangle.Round(new RectangleF(cx - 7.5F, cy - 1.5F, 15F, 12F)), 3))
+                        g.FillPath(brush, body);
+                    break;
+
+                case BadgeKind.Shield:
+                    g.DrawPolygon(pen, new PointF[]
+                    {
+                        new PointF(cx, cy - 10F),
+                        new PointF(cx + 8F, cy - 6.5F),
+                        new PointF(cx + 8F, cy + 1F),
+                        new PointF(cx, cy + 9.5F),
+                        new PointF(cx - 8F, cy + 1F),
+                        new PointF(cx - 8F, cy - 6.5F)
+                    });
+                    g.DrawLines(pen, new PointF[]
+                    {
+                        new PointF(cx - 3.5F, cy),
+                        new PointF(cx - 0.5F, cy + 3F),
+                        new PointF(cx + 4F, cy - 3.5F)
+                    });
+                    break;
+
+                case BadgeKind.Check:
+                    using (var wide = new Pen(pen.Color, 3.2F))
+                    {
+                        wide.StartCap = LineCap.Round;
+                        wide.EndCap = LineCap.Round;
+                        wide.LineJoin = LineJoin.Round;
+                        g.DrawLines(wide, new PointF[]
+                        {
+                            new PointF(cx - 7F, cy + 0.5F),
+                            new PointF(cx - 2F, cy + 5.5F),
+                            new PointF(cx + 7.5F, cy - 5.5F)
+                        });
+                    }
+                    break;
+
+                case BadgeKind.Warning:
+                    g.DrawPolygon(pen, new PointF[]
+                    {
+                        new PointF(cx, cy - 9F),
+                        new PointF(cx + 9F, cy + 7F),
+                        new PointF(cx - 9F, cy + 7F)
+                    });
+                    g.DrawLine(pen, cx, cy - 3.5F, cx, cy + 2F);
+                    using (var brush = new SolidBrush(pen.Color))
+                        g.FillEllipse(brush, cx - 1.5F, cy + 4F, 3F, 3F);
+                    break;
+
+                case BadgeKind.Error:
+                    g.DrawLine(pen, cx - 6F, cy - 6F, cx + 6F, cy + 6F);
+                    g.DrawLine(pen, cx + 6F, cy - 6F, cx - 6F, cy + 6F);
+                    break;
+
+                default:
+                    // Info: Punkt oben, Strich darunter.
+                    using (var brush = new SolidBrush(pen.Color))
+                        g.FillEllipse(brush, cx - 1.6F, cy - 7F, 3.2F, 3.2F);
+                    g.DrawLine(pen, cx, cy - 2F, cx, cy + 7F);
+                    break;
+            }
+        }
+    }
+
     internal sealed class FlatButton : Button
     {
         private bool _hover;
@@ -438,6 +608,26 @@ namespace crytec
             }
         }
 
+        protected override void OnGotFocus(EventArgs e)
+        {
+            base.OnGotFocus(e);
+            Invalidate();
+        }
+
+        protected override void OnLostFocus(EventArgs e)
+        {
+            base.OnLostFocus(e);
+            Invalidate();
+        }
+
+        protected override AccessibleObject CreateAccessibilityInstance()
+        {
+            // Bewusst das Rahmen-Objekt: Die typisierten Varianten
+            // (ButtonAccessibleObject & Co.) sind internal. Die Rolle
+            // (PushButton, gesetzt im Konstruktor) meldet das Objekt selbst.
+            return base.CreateAccessibilityInstance();
+        }
+
         protected override void OnEnabledChanged(EventArgs e)
         {
             base.OnEnabledChanged(e);
@@ -461,6 +651,20 @@ namespace crytec
             using (GraphicsPath path = CardPanel.BuildRoundedPath(bounds, radius))
             using (var brush = new SolidBrush(back))
                 g.FillPath(brush, path);
+
+            // Tastaturfokus sichtbar machen: Wer mit Tab navigiert, muss sehen,
+            // wo er steht. Der Ring erscheint nur bei Fokus ohne Hover, damit
+            // ein Klick mit der Maus kein zusaetzliches Aufleuchten erzeugt.
+            if (Focused && Enabled && !_hover)
+            {
+                using (var focus = new Pen(Theme.Accent, 2F))
+                {
+                    var inner = new Rectangle(bounds.X + 2, bounds.Y + 2,
+                        bounds.Width - 5, bounds.Height - 5);
+                    using (GraphicsPath focusPath = CardPanel.BuildRoundedPath(inner, radius))
+                        g.DrawPath(focus, focusPath);
+                }
+            }
 
             Color fore = Enabled
                 ? (IsPrimary ? Color.White : Theme.NeutralButtonText)

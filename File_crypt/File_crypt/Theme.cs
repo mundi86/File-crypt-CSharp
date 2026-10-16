@@ -26,7 +26,7 @@ namespace crytec
         internal const int FormWidth = 520;
 
         /// <summary>Fensterhoehe in Client-Koordinaten.</summary>
-        internal const int FormHeight = 352;
+        internal const int FormHeight = 310;
 
         /// <summary>Rand um die Karten herum.</summary>
         internal const int Margin = 16;
@@ -59,6 +59,9 @@ namespace crytec
         private static Color _neutralButtonText;
         private static Color _track;
         private static Color _bar;
+        private static Color _success;
+        private static Color _warning;
+        private static Color _error;
 
         // ---------------------------------------------------------------
         // Schriften
@@ -74,6 +77,7 @@ namespace crytec
         internal static Font FontBody { get; private set; }
         internal static Font FontSmall { get; private set; }
         internal static Font FontButton { get; private set; }
+        internal static Font FontHeadline { get; private set; }
 
         private static string ResolveFamily()
         {
@@ -105,6 +109,7 @@ namespace crytec
             FontBody = new Font(Family, 9.75F, FontStyle.Regular, GraphicsUnit.Point);
             FontSmall = new Font(Family, 8.25F, FontStyle.Regular, GraphicsUnit.Point);
             FontButton = new Font(Family, 10.5F, FontStyle.Regular, GraphicsUnit.Point);
+            FontHeadline = new Font(Family, 20F, FontStyle.Regular, GraphicsUnit.Point);
         }
 
         // ---------------------------------------------------------------
@@ -162,6 +167,15 @@ namespace crytec
         /// <summary>Farbe des Fortschrittsbalkens (gefuellt).</summary>
         internal static Color Bar { get { return _bar; } }
 
+        /// <summary>Statusfarbe fuer Erfolg (Ergebnis, Entsperr-Symbol).</summary>
+        internal static Color Success { get { return _success; } }
+
+        /// <summary>Statusfarbe fuer Hinweise (Abbruch, Uebersprungen).</summary>
+        internal static Color Warning { get { return _warning; } }
+
+        /// <summary>Statusfarbe fuer Fehler.</summary>
+        internal static Color Error { get { return _error; } }
+
         // ---------------------------------------------------------------
         // Initialisierung
         // ---------------------------------------------------------------
@@ -180,9 +194,9 @@ namespace crytec
             {
                 _accent = Color.FromArgb(0x4C, 0xC2, 0xFF);
                 _accentHover = Color.FromArgb(0x62, 0xD0, 0xFF);
-                _card = Color.FromArgb(0x2C, 0x2C, 0x2C);
-                _form = Color.FromArgb(0x20, 0x20, 0x20);
-                _border = Color.FromArgb(0x3D, 0x3D, 0x3D);
+                _card = Color.FromArgb(0x2B, 0x2B, 0x2B);
+                _form = Color.FromArgb(0x19, 0x19, 0x19);
+                _border = Color.FromArgb(0x45, 0x45, 0x45);
                 _textStrong = Color.White;
                 _text = Color.FromArgb(0xE6, 0xE6, 0xE6);
                 _textMuted = Color.FromArgb(0xA0, 0xA0, 0xA0);
@@ -194,6 +208,9 @@ namespace crytec
                 _neutralButton = Color.FromArgb(0x3D, 0x3D, 0x3D);
                 _neutralButtonText = Color.White;
                 _track = Color.FromArgb(0x4A, 0x4A, 0x4A);
+                _success = Color.FromArgb(0x6C, 0xCB, 0x5F);
+                _warning = Color.FromArgb(0xF2, 0xC1, 0x4E);
+                _error = Color.FromArgb(0xF1, 0x70, 0x7B);
                 _bar = _accent;
             }
             else
@@ -214,6 +231,9 @@ namespace crytec
                 _neutralButton = Color.FromArgb(0xF0, 0xF0, 0xF0);
                 _neutralButtonText = Color.FromArgb(0x20, 0x20, 0x20);
                 _track = Color.FromArgb(0xE6, 0xE6, 0xE6);
+                _success = Color.FromArgb(0x10, 0x7C, 0x10);
+                _warning = Color.FromArgb(0x8A, 0x5A, 0x00);
+                _error = Color.FromArgb(0xC4, 0x2B, 0x1C);
                 _bar = _accent;
             }
         }

@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Diagnostics;
+using System.Threading;
 
 namespace crytec.Tests
 {
@@ -11,6 +13,14 @@ namespace crytec.Tests
     /// </summary>
     internal static class FileOpsTests
     {
+        private static Process StartCmd(string arguments)
+        {
+            var psi = new ProcessStartInfo("cmd.exe", arguments);
+            psi.UseShellExecute = false;
+            psi.CreateNoWindow = true;
+            return Process.Start(psi);
+        }
+
         internal static void Run(TestRunner t, string dir)
         {
             t.Section("FileOps: Endungserkennung");
@@ -110,6 +120,46 @@ namespace crytec.Tests
                     FileOps.MakeRelative(Path.Combine(root, "unterordner", "d.txt"), root));
             t.Equal("ausserhalb faellt auf Dateinamen zurueck", "anders.txt",
                     FileOps.MakeRelative("C:\\woanders\\anders.txt", root));
+
+            t.Section("FileOps: Betrachter-Ueberwachung (Quick-Edit)");
+
+            // Null bedeutet: ShellExecute ohne Prozessobjekt - nie ueberwachbar.
+            t.Check("IsViewerTrackable: null ist nicht ueberwachbar",
+                    !FileOps.IsViewerTrackable(null, 100, CancellationToken.None));
+
+            // Ein sofort endender Prozess (Starter-Stub der Fotos-App, toter
+            // rundll32-Aufruf) darf nicht als "wird gerade angesehen" gelten -
+            // sonst wuerde Quick-Edit die Temporaerdatei sofort wieder loeschen.
+            using (var quick = StartCmd("/c exit 0"))
+            {
+                t.Check("IsViewerTrackable: sofort beendeter Prozess ist nicht ueberwachbar",
+                        !FileOps.IsViewerTrackable(quick, 3000, CancellationToken.None));
+            }
+
+            // Ein noch laufender Betrachter (Notepad, Bildbetrachter) ist
+            // ueberwachbar - auf sein Ende darf gewartet werden.
+            var longRunner = StartCmd("/c ping -n 30 127.0.0.1 >nul");
+            try
+            {
+                t.Check("IsViewerTrackable: laufender Prozess ist ueberwachbar",
+                        FileOps.IsViewerTrackable(longRunner, 300, CancellationToken.None));
+            }
+            finally
+            {
+                try { if (!longRunner.HasExited) longRunner.Kill(); } catch { }
+                longRunner.Dispose();
+            }
+
+            t.Section("FileOps: Dateizuordnung (Quick-Edit)");
+
+            // Konservativ: Ohne Nachweis gilt "keine App" - dann wartet
+            // Quick-Edit auf "Fertig", statt die Datei zu frueh zu loeschen.
+            t.Check("HasAssociatedApp: null ist nicht zugeordnet",
+                    !FileOps.HasAssociatedApp(null));
+            t.Check("HasAssociatedApp: leer ist nicht zugeordnet",
+                    !FileOps.HasAssociatedApp(""));
+            t.Check("HasAssociatedApp: .txt ist zugeordnet",
+                    FileOps.HasAssociatedApp(".txt"));
         }
     }
 }
