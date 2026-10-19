@@ -45,7 +45,21 @@ jobs:
           $hash = (Get-FileHash dist\privateCrypt_Setup.exe -Algorithm SHA256).Hash.ToLower()
           "$hash  privateCrypt_Setup.exe" | Set-Content -Encoding ASCII dist\privateCrypt_Setup.exe.sha256
 
+      - name: Extract release notes from CHANGELOG
+        run: |
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          $lines = Get-Content CHANGELOG.md
+          $start = (Select-String -Path CHANGELOG.md -Pattern "^## \[$([regex]::Escape($version))\]" | Select-Object -First 1).LineNumber
+          if (-not $start) {
+            throw "Kein CHANGELOG-Eintrag für $version"
+          }
+          $end = (Select-String -Path CHANGELOG.md -Pattern '^## \[' | Where-Object { $_.LineNumber -gt $start } | Select-Object -First 1).LineNumber
+          if (-not $end) {
+            $end = $lines.Count + 1
+          }
+          $lines[$start..($end - 2)] | Set-Content -Encoding UTF8 release-notes.md
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create $env:GITHUB_REF_NAME dist\privateCrypt_Setup.exe dist\privateCrypt_Setup.exe.sha256 --repo $env:GITHUB_REPOSITORY --title "privateCrypt $env:GITHUB_REF_NAME" --generate-notes
+        run: gh release create $env:GITHUB_REF_NAME dist\privateCrypt_Setup.exe dist\privateCrypt_Setup.exe.sha256 --repo $env:GITHUB_REPOSITORY --title "privateCrypt $env:GITHUB_REF_NAME" --notes-file release-notes.md
