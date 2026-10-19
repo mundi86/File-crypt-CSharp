@@ -1,0 +1,51 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check tag matches assembly version
+        run: |
+          $tag = $env:GITHUB_REF_NAME -replace '^v', ''
+          $match = Select-String -Path File_crypt\File_crypt\Properties\AssemblyInfo.cs -Pattern 'AssemblyVersion\("([^"]+)"\)'
+          $assembly = $match.Matches[0].Groups[1].Value
+          if ($assembly -ne "$tag.0") {
+            throw "Tag $tag passt nicht zu AssemblyVersion $assembly"
+          }
+
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build (Release x86)
+        run: msbuild File_crypt\File_crypt.sln /p:Configuration=Release /p:Platform=x86 /v:minimal /nologo
+
+      - name: Run unit tests
+        run: .\File_crypt\Tests\PolyAES.Tests\bin\Release\PolyAES.Tests.exe
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\privateCrypt.iss'
+
+      - name: Create checksum
+        run: |
+          $hash = (Get-FileHash dist\privateCrypt_Setup.exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  privateCrypt_Setup.exe" | Set-Content -Encoding ASCII dist\privateCrypt_Setup.exe.sha256
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create $env:GITHUB_REF_NAME dist\privateCrypt_Setup.exe dist\privateCrypt_Setup.exe.sha256 --repo $env:GITHUB_REPOSITORY --title "privateCrypt $env:GITHUB_REF_NAME" --generate-notes
