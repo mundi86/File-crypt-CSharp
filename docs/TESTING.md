@@ -160,7 +160,7 @@ Gefühl beim Warten.
   Verlassen des Feldes wird wieder verdeckt.
 - **Dunkelmodus** umschalten (Windows-Einstellungen → Personalisierung). Die
   Titelleiste, die Karten, das Passwortfeld und der Fortschrittsbalken müssen
-  gemeinsam umschalten; im Standard-ProgressBar blieb previously ein heller
+  gemeinsam umschalten; im Standard-ProgressBar blieb bisher ein heller
   Streifen stehen.
 - **Ecken abrunden aus** (Windows → Personalisierung → Ecken für Fenster
   abrunden = Nie): die Karten müssen dann eckig sein, sonst wirkt die Karte
@@ -187,11 +187,14 @@ Ehrlich benannt, was **nicht** abgesichert ist:
 - **Quick Edit mit Bildbetrachter wurde nicht verifiziert.** Der Pfad
   braucht einen installierten Bild-Viewer; in der Automatisierung stand
   keiner zur Verfügung. Der manuelle Test 8 deckt das ab.
-- **Der Installer wurde nicht gebaut.** `installer/privateCrypt.iss`
-  ist auf Version 3.0 gebracht (feste `AppId`, quoting bei
-  `UninstallDisplayIcon`), aber Inno Setup war auf dem Build-Rechner
-  nicht installiert. `privateCrypt_Setup.exe` im `dist/`-Ordner ist
-  deshalb noch der alte 2.0-Stand — bitte neu kompilieren.
+- **Der Installer ist nicht digital signiert.** Der 4.1-Build mit Inno
+  Setup 6.7.3 kompiliert und installiert sauber, löst aber eine
+  SmartScreen-Warnung aus. Eine Code-Signing-Signatur ist nicht
+  vorhanden.
+- **Ein Wechsel der Installationsart hinterlässt zwei Einträge.** Wird
+  eine bestehende `/install`-Installation nicht vorher deinstalliert,
+  legt der Inno-Installer einen zweiten Eintrag in „Apps & Features" an.
+  Vor dem Wechsel immer zuerst die alte Installation entfernen.
 - **Kein Test der Registry-Registrierung.** `/install` und `/uninstall`
   schreiben in `HKCU`; das ist nur manuell prüfbar, weil Tests die
   Registry des Nutzers nicht verändern sollten.

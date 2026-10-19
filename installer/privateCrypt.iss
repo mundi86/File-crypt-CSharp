@@ -53,16 +53,9 @@ SetupIconFile=..\File_crypt\File_crypt\1374605872_86255.ico
 
 ; Der Uninstall-Eintrag in HKCU wird von [Registry] nicht vollstaendig
 ; abgedeckt: die beiden ProgID-Unterschluessel (DefaultIcon, shell\open)
-; brauchen eigene uninsdeletekey-Eintraege. Sonst bliebe nach dem Entfernen
-; die Dateizuordnung .protected -> privateCrypt.protected im Registry stehen
-; und Explorer zeigte weiterhin das Schluessel-Icon auf leere Dateien.
-Root: HKCU; \
-      Subkey: "Software\Classes\privateCrypt.protected\DefaultIcon"; \
-      Flags: uninsdeletekey
-
-Root: HKCU; \
-      Subkey: "Software\Classes\privateCrypt.protected\shell\open"; \
-      Flags: uninsdeletekey
+; brauchen uninsdeletekey an ihren Werte-Eintraegen. Sonst bliebe nach dem
+; Entfernen die Dateizuordnung .protected -> privateCrypt.protected im
+; Registry stehen und Explorer zeigte weiterhin das Schluessel-Icon.
 
 ; Compression
 Compression=lzma2/ultra64
@@ -182,12 +175,14 @@ Root: HKCU; \
 Root: HKCU; \
       Subkey: "Software\Classes\privateCrypt.protected\DefaultIcon"; \
       ValueType: string; ValueName: ""; \
-      ValueData: """{app}\{#AppExeName}"",0"
+      ValueData: """{app}\{#AppExeName}"",0"; \
+      Flags: uninsdeletekey
 
 Root: HKCU; \
       Subkey: "Software\Classes\privateCrypt.protected\shell\open"; \
       ValueType: string; ValueName: ""; \
-      ValueData: "🔓 Entschlüsseln (AES256)"
+      ValueData: "🔓 Entschlüsseln (AES256)"; \
+      Flags: uninsdeletekey
 
 Root: HKCU; \
       Subkey: "Software\Classes\privateCrypt.protected\shell\open\command"; \

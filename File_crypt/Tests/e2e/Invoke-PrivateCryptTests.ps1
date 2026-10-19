@@ -1,5 +1,5 @@
 # ============================================================================
-# privateCrypt 3.0 - End-to-End-Testlauf gegen die echte EXE
+# privateCrypt 4.1 - End-to-End-Testlauf gegen die echte EXE
 #
 # Startet die gebaute Anwendung, bedient sie ueber Windows UI Automation und
 # prueft das Ergebnis auf der Platte. Ergaenzt die Unit-Tests, deckt aber nur

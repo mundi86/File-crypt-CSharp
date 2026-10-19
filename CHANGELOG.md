@@ -32,6 +32,11 @@ All notable changes to privateCrypt are documented here.
   conservatively detects a registered handler (ProgId command, user choice,
   system associations, UWP open keys); without one, Quick-Edit goes straight
   to the "Fertig" confirmation instead of relying on process tracking.
+- **Installer did not compile with Inno Setup 6.7.** Two `[Registry]`
+  entries marked the `DefaultIcon` and `shell\open` subkeys for deletion
+  without providing a value, which the compiler rejects. The
+  `uninsdeletekey` flags now sit on the value entries themselves. The 4.1
+  setup compiles cleanly and installs per-user; it is still unsigned.
 
 ### Changed
 
@@ -44,6 +49,13 @@ All notable changes to privateCrypt are documented here.
   new themed `FluentMessageBox`, so dark mode and typography stay consistent
   everywhere - summaries deliberately stay modal so they cannot be missed.
   Keyboard users get a visible focus ring on buttons.
+
+### Verified
+
+- 148/148 unit tests pass (`PolyAES.Tests`, exit code 0).
+- 31/31 end-to-end checks pass against the real executable.
+- The 4.1 Inno Setup installer compiles and installs per-user without
+  elevation.
 
 ## [4.0.0] - 2026
 
