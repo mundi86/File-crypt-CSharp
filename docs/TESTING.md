@@ -203,6 +203,15 @@ Ehrlich benannt, was **nicht** abgesichert ist:
 
 ---
 
+## Automatische CI
+
+`.github/workflows/build.yml` läuft bei jedem Push auf `master` und bei Pull
+Requests: Build (Release/x86), die 148 Unit-Tests und der Installer-Build.
+Der End-to-End-Lauf bleibt lokal, weil er einen interaktiven Windows-Desktop
+mit UI Automation benötigt.
+
+---
+
 ## Vor einem Release
 
 ```powershell
