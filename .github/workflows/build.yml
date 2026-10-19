@@ -1,0 +1,44 @@
+name: Build and Test
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build (Release x86)
+        run: msbuild File_crypt\File_crypt.sln /p:Configuration=Release /p:Platform=x86 /v:minimal /nologo
+
+      - name: Run unit tests
+        run: .\File_crypt\Tests\PolyAES.Tests\bin\Release\PolyAES.Tests.exe
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\privateCrypt.iss'
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: privateCrypt
+          path: |
+            File_crypt/File_crypt/bin/Release/privateCrypt.exe
+            File_crypt/File_crypt/bin/Release/privateCrypt.exe.config
+            dist/privateCrypt_Setup.exe
+          if-no-files-found: error
