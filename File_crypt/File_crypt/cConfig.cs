@@ -21,11 +21,21 @@ namespace crytec
     internal static class cConfig
     {
         private const string AppName = "privateCrypt";
-        private const string AppVersion = "4.1";
+        private const string AppVersion = "4.1.1";
         private const string AppPublisher = "mundi86";
 
         private const string UninstallRegKey =
             @"Software\Microsoft\Windows\CurrentVersion\Uninstall\" + AppName;
+
+        /// <summary>
+        /// Uninstall-Schluessel des Inno-Setup-Installers. Er wird an der festen
+        /// AppId erkannt, damit <c>/install</c> und <c>/uninstall</c> nicht
+        /// neben einer Installer-Installation einen zweiten Eintrag anlegen
+        /// oder deren Dateien loeschen.
+        /// </summary>
+        private const string InnoUninstallRegKey =
+            @"Software\Microsoft\Windows\CurrentVersion\Uninstall\" +
+            "{8BC17DCE-B1E3-4681-81D2-863B45CB0BF3}_is1";
 
         /// <summary>Ursprunglicher Wurzelpfad unter HKCU\Software\Classes.</summary>
         private const string ClassesRoot = @"Software\Classes";
@@ -63,6 +73,19 @@ namespace crytec
                 // Laeuft bereits aus dem Installationsverzeichnis - nichts zu tun.
                 if (string.Equals(Application.StartupPath, installDir, StringComparison.OrdinalIgnoreCase))
                     return;
+
+                // Der Inno-Installer verwaltet denselben Ordner und einen
+                // eigenen Uninstall-Eintrag. Ein zweiter /install-Eintrag
+                // wuerde in "Apps & Features" doppelt erscheinen.
+                if (IsInnoInstallationPresent())
+                {
+                    MessageBox.Show(
+                        AppName + " wurde über den Installer installiert.\r\n\r\n" +
+                        "Bitte zuerst in „Apps & Features“ deinstallieren und danach " +
+                        "privateCrypt.exe /install erneut ausführen.",
+                        AppName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
 
                 Directory.CreateDirectory(installDir);
 
@@ -179,6 +202,12 @@ namespace crytec
             }
         }
 
+        private static bool IsInnoInstallationPresent()
+        {
+            using (RegistryKey key = Registry.CurrentUser.OpenSubKey(InnoUninstallRegKey))
+                return key != null;
+        }
+
         private static void WriteUninstallEntry(string exePath, string installDir, string icon)
         {
             using (RegistryKey uninst = Registry.CurrentUser.CreateSubKey(UninstallRegKey))
@@ -208,6 +237,18 @@ namespace crytec
         {
             try
             {
+                // Der Inno-Uninstaller loescht Dateien, Ordner und Eintrag.
+                // Ein /uninstall daneben wuerde eine kaputte Installation
+                // hinterlassen.
+                if (IsInnoInstallationPresent())
+                {
+                    MessageBox.Show(
+                        AppName + " wurde über den Installer installiert.\r\n\r\n" +
+                        "Bitte die Deinstallation über „Apps & Features“ starten.",
+                        AppName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
                 using (RegistryKey classes = Registry.CurrentUser.OpenSubKey(ClassesRoot, true))
                 {
                     if (classes != null)

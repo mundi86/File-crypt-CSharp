@@ -187,7 +187,7 @@ Ehrlich benannt, was **nicht** abgesichert ist:
 - **Quick Edit mit Bildbetrachter wurde nicht verifiziert.** Der Pfad
   braucht einen installierten Bild-Viewer; in der Automatisierung stand
   keiner zur Verfügung. Der manuelle Test 8 deckt das ab.
-- **Der Installer ist nicht digital signiert.** Der 4.1-Build mit Inno
+- **Der Installer ist nicht digital signiert.** Der 4.1.1-Build mit Inno
   Setup 6.7.3 kompiliert und installiert sauber, löst aber eine
   SmartScreen-Warnung aus. Eine Code-Signing-Signatur ist nicht
   vorhanden.

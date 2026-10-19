@@ -2,6 +2,24 @@
 
 All notable changes to privateCrypt are documented here.
 
+## [4.1.1] - 2026-10-19
+
+### Fixed
+
+- **Switching installation methods no longer leaves duplicate entries in
+  "Apps & Features".** A `/install` next to an Inno Setup installation created
+  a second uninstall key, and an Inno installation next to a `/install`
+  installation left the legacy key behind. The Inno installer now removes the
+  legacy key on install and uninstall; `/install` and `/uninstall` detect the
+  Inno installation and point the user to "Apps & Features" instead of
+  creating a duplicate or a broken entry.
+
+### Verified
+
+- 148/148 unit tests pass (`PolyAES.Tests`, exit code 0).
+- 31/31 end-to-end checks pass against the real executable.
+- The 4.1.1 installer compiles and installs per-user without elevation.
+
 ## [4.1.0] - 2026-10-16
 
 ### Fixed

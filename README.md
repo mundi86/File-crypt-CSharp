@@ -206,7 +206,7 @@ New-ItemProperty -Path "$p\shell\open\command" -Name "(default)" -Value ('"'+$ex
 $u = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\privateCrypt"
 New-Item -Path $u -Force | Out-Null
 New-ItemProperty -Path $u -Name "DisplayName"     -Value "privateCrypt"                -PropertyType String -Force
-New-ItemProperty -Path $u -Name "DisplayVersion"  -Value "4.1"                          -PropertyType String -Force
+New-ItemProperty -Path $u -Name "DisplayVersion"  -Value "4.1.1"                        -PropertyType String -Force
 New-ItemProperty -Path $u -Name "Publisher"       -Value "mundi86"                      -PropertyType String -Force
 New-ItemProperty -Path $u -Name "DisplayIcon"     -Value ('"'+$exe+'",0')              -PropertyType String -Force
 New-ItemProperty -Path $u -Name "UninstallString" -Value ('"'+$exe+'" /uninstall')     -PropertyType String -Force
@@ -273,7 +273,7 @@ public class Sh {
 
 ### ✅ Apps & Features prüfen
 - Windows-Taste → „Apps" → nach „privateCrypt" suchen
-- Eintrag mit Version 4.1 sollte erscheinen
+- Eintrag mit Version 4.1.1 sollte erscheinen
 
 ### ✅ Installation prüfen, ohne den Explorer zu bemühen
 
@@ -286,7 +286,7 @@ Get-Item "$env:LOCALAPPDATA\privateCrypt\privateCrypt.exe" |
   Select-Object @{n='Version';e={$_.VersionInfo.FileVersion}}
 ```
 
-Erwartet: `4.1.0.0`. Steht dort noch eine andere Version, testest du die alte.
+Erwartet: `4.1.1.0`. Steht dort noch eine andere Version, testest du die alte.
 
 Für die Registry-Pfade hilft ein Blick auf die Kommandos:
 
@@ -396,7 +396,7 @@ nicht über das Menü, sondern direkt:
 
 Im Fenster selbst erkennbar an der Beschriftung über dem Passwortfeld:
 
-| | Version 2.0 | Version 3.0 | Version 4.0 | Version 4.1 |
+| | Version 2.0 | Version 3.0 | Version 4.0 | Version 4.1.x |
 |---|---|---|---|---|
 | Beschriftung | `crypt with -> PolyAES256` | `Verschlüsseln → AES-256-CBC + HMAC-SHA256` | `AES-256-CBC + HMAC-SHA256 · neues Format PCv4` | wie 4.0 |
 | Fenster | schmal | 400 px breit | 520 px, Karte mit Passwortfeld und Hinweiszeile | 520 px, Karte mit Plakette + 20-pt-Titel |
@@ -663,10 +663,10 @@ Die Version steht in **vier** Dateien und muss überall gleich sein:
 
 | Datei | Ort | Wert |
 |---|---|---|
-| `File_crypt/File_crypt/Properties/AssemblyInfo.cs` | `AssemblyVersion`, `AssemblyFileVersion` | `4.1.0.0` |
-| `File_crypt/File_crypt/app.manifest` | `assemblyIdentity/@version` | `4.1.0.0` |
-| `File_crypt/File_crypt/cConfig.cs` | `AppVersion` (Uninstall-Eintrag) | `4.1` |
-| `installer/privateCrypt.iss` | `AppVersion` | `4.1` |
+| `File_crypt/File_crypt/Properties/AssemblyInfo.cs` | `AssemblyVersion`, `AssemblyFileVersion` | `4.1.1.0` |
+| `File_crypt/File_crypt/app.manifest` | `assemblyIdentity/@version` | `4.1.1.0` |
+| `File_crypt/File_crypt/cConfig.cs` | `AppVersion` (Uninstall-Eintrag) | `4.1.1` |
+| `installer/privateCrypt.iss` | `AppVersion` | `4.1.1` |
 
 Das ist nicht nur Kosmetik: wer nur in die Dateieigenschaften der EXE
 schaut, erkennt sonst nicht, welche Version läuft. Genau das ist beim

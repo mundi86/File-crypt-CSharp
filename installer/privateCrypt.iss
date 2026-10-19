@@ -7,7 +7,7 @@
 ; The compiled setup will be placed in:  ..\dist\privateCrypt_Setup.exe
 
 #define AppName      "privateCrypt"
-#define AppVersion   "4.1"
+#define AppVersion   "4.1.1"
 #define AppPublisher "mundi86"
 #define AppExeName   "privateCrypt.exe"
 
@@ -192,3 +192,28 @@ Root: HKCU; \
 [UninstallDelete]
 ; Remove the entire install folder on uninstall
 Type: filesandordirs; Name: "{app}"
+
+[Code]
+const
+  // Alte /install-Installationen schreiben ihren Eintrag unter diesen Key.
+  // Der Inno-Installer verwendet stattdessen {AppId}_is1.
+  LegacyUninstallKey =
+    'Software\Microsoft\Windows\CurrentVersion\Uninstall\privateCrypt';
+
+procedure RemoveLegacyUninstallEntry();
+begin
+  if RegKeyExists(HKCU, LegacyUninstallKey) then
+    RegDeleteKeyIncludingSubkeys(HKCU, LegacyUninstallKey);
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssInstall then
+    RemoveLegacyUninstallEntry();
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if CurUninstallStep = usPostUninstall then
+    RemoveLegacyUninstallEntry();
+end;
